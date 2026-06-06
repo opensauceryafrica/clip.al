@@ -34,7 +34,14 @@ RUN pnpm --filter @clipal/web build
 
 # ---- runtime ---------------------------------------------------------------
 FROM base AS runner
-ENV NODE_ENV=production PORT=3000
+# HOSTNAME=0.0.0.0 is load-bearing: Next's standalone server binds to
+# process.env.HOSTNAME, and Docker otherwise sets HOSTNAME to the container id —
+# so the server would listen only on the container's own IP. Published-port
+# traffic still reaches it, but the in-container healthcheck (and anything hitting
+# localhost) gets ECONNREFUSED, leaving the container perpetually "unhealthy" and
+# blocking dependents (Caddy). Binding 0.0.0.0 fixes the healthcheck; the only
+# host exposure is the 127.0.0.1-bound published port in compose.
+ENV NODE_ENV=production PORT=3000 HOSTNAME=0.0.0.0
 RUN addgroup -g 1001 -S nodejs && adduser -S nextjs -u 1001
 
 # Next standalone bundles a pruned node_modules + server.js (monorepo-aware paths).
