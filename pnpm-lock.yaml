@@ -146,6 +146,9 @@ importers:
 
   .:
     devDependencies:
+      '@clipal/cache':
+        specifier: workspace:*
+        version: link:packages/cache
       '@clipal/config':
         specifier: workspace:*
         version: link:packages/config

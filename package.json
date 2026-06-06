@@ -24,9 +24,11 @@
     "migrate:create": "pnpm --filter @clipal/db generate",
     "migrate:push": "pnpm --filter @clipal/db push",
     "seed:admin": "tsx scripts/seed-admin.ts",
+    "seed:brand-terms": "tsx scripts/seed-brand-terms.ts",
     "migrate:abbrefy": "tsx scripts/migrate-abbrefy.ts"
   },
   "devDependencies": {
+    "@clipal/cache": "workspace:*",
     "@clipal/config": "workspace:*",
     "@clipal/db": "workspace:*",
     "@eslint/js": "catalog:",
