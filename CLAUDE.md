@@ -49,6 +49,11 @@ implementations — prefer extending them over re-styling per page.
   transpiled in-place (`transpilePackages`); no build step.
 - After changes: `pnpm -r typecheck`, `pnpm lint`, `pnpm -r test`. For UI/app
   changes, also rebuild the web image and confirm it boots healthy.
+- **Browser verification: ALWAYS use the Preview tool** (`mcp__Claude_Preview__*`),
+  never Claude-in-Chrome — the connected Chrome can't reach the local container.
+  Start the `web` config from `.claude/launch.json` (Next dev on :3100; needs a
+  local `apps/web/.env.local` with service hosts pointed at `localhost`), then
+  `preview_eval` / `preview_screenshot` against that `serverId`.
 - Conventional commits; commit only when asked. End commit messages with the
   `Co-Authored-By` trailer.
 - Public URLs/cookies derive from `APP_URL`, never the request `Host`.
