@@ -11,7 +11,7 @@ export async function register(): Promise<void> {
     try {
       const { bootstrapSecuritySets } = await import('@clipal/shorten');
       await bootstrapSecuritySets();
-      console.log('[boot] reserved slugs + domain blocklist loaded into Redis');
+      console.log('[boot] reserved slugs + domain blocklist + brand terms loaded into Redis');
     } catch (err) {
       // Don't crash boot if Redis/Postgres aren't ready yet; shorten validation
       // also checks the in-memory reserved list as a fallback.

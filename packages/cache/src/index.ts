@@ -9,4 +9,10 @@ export {
   isBlockedDomain,
   addBlockedDomain,
   removeBlockedDomain,
+  loadBrandTerms,
+  getBrandTerms,
+  addBrandTerm,
+  removeBrandTerm,
+  type BrandTerm,
+  type BrandTermPolicy,
 } from './sets';

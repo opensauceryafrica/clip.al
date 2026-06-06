@@ -1,9 +1,25 @@
 'use server';
 
 import { invalidateUserCache, revokeAllSessions } from '@clipal/auth';
-import { addBlockedDomain, keys, redis, removeBlockedDomain } from '@clipal/cache';
+import {
+  addBlockedDomain,
+  addBrandTerm,
+  keys,
+  redis,
+  removeBlockedDomain,
+  removeBrandTerm,
+} from '@clipal/cache';
 import { getPublicBaseUrl } from '@clipal/config';
-import { blockedDomains, db, eq, linkReports, links, recordAudit, users } from '@clipal/db';
+import {
+  blockedDomains,
+  db,
+  eq,
+  flaggedBrandTerms,
+  linkReports,
+  links,
+  recordAudit,
+  users,
+} from '@clipal/db';
 import { sendAccountSuspended } from '@clipal/email';
 import { registrableDomain } from '@clipal/safety';
 import { headers } from 'next/headers';
@@ -221,4 +237,50 @@ export async function adminUnblockDomainAction(formData: FormData): Promise<void
     ...(await auditContext()),
   });
   revalidatePath('/admin/blocklist');
+}
+
+// ---- Brand terms ------------------------------------------------------------
+
+export async function adminAddBrandTermAction(formData: FormData): Promise<void> {
+  const admin = await requireAdmin();
+  // Lowercase, strip whitespace; the check is a substring of the hostname.
+  const term = String(formData.get('term') ?? '')
+    .trim()
+    .toLowerCase();
+  if (!term) return;
+  const policy = String(formData.get('policy') ?? 'flag') === 'reject' ? 'reject' : 'flag';
+
+  await db
+    .insert(flaggedBrandTerms)
+    .values({ term, policy, addedBy: admin.id })
+    .onConflictDoUpdate({ target: flaggedBrandTerms.term, set: { policy, addedBy: admin.id } });
+  await addBrandTerm(term, policy);
+  await recordAudit(db, {
+    actorId: admin.id,
+    action: 'brand_term.add',
+    targetType: 'brand_term',
+    targetId: term,
+    metadata: { policy },
+    ...(await auditContext()),
+  });
+  revalidatePath('/admin/brand-terms');
+}
+
+export async function adminRemoveBrandTermAction(formData: FormData): Promise<void> {
+  const admin = await requireAdmin();
+  const term = String(formData.get('term') ?? '')
+    .trim()
+    .toLowerCase();
+  if (!term) return;
+
+  await db.delete(flaggedBrandTerms).where(eq(flaggedBrandTerms.term, term));
+  await removeBrandTerm(term);
+  await recordAudit(db, {
+    actorId: admin.id,
+    action: 'brand_term.remove',
+    targetType: 'brand_term',
+    targetId: term,
+    ...(await auditContext()),
+  });
+  revalidatePath('/admin/brand-terms');
 }

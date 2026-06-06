@@ -32,7 +32,7 @@ describe('validateDestination', () => {
     expect(r.ok).toBe(true);
     if (r.ok) {
       expect(r.value.etld1).toBe('example.com');
-      expect(r.brandFlag).toBe(false);
+      expect(r.value.sld).toBe('example');
     }
   });
 
@@ -63,19 +63,5 @@ describe('validateDestination', () => {
     const r = validateDestination(long);
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.reason).toBe('too_long');
-  });
-
-  it('flags trademark lookalikes but not the genuine brand domain', () => {
-    const fake = validateDestination('https://paypal-login.com');
-    expect(fake.ok).toBe(true);
-    if (fake.ok) expect(fake.brandFlag).toBe(true);
-
-    const real = validateDestination('https://www.paypal.com/signin');
-    expect(real.ok).toBe(true);
-    if (real.ok) expect(real.brandFlag).toBe(false);
-
-    const subdomain = validateDestination('https://help.netflix.com');
-    expect(subdomain.ok).toBe(true);
-    if (subdomain.ok) expect(subdomain.brandFlag).toBe(false);
   });
 });

@@ -28,6 +28,12 @@ export const keys = {
   reservedSlugs: 'set:reserved_slugs',
   /** Blocked eTLD+1 domains set (rebuilt on blocklist change, §14.1). */
   blockedDomains: 'set:blocked_domains',
+  /**
+   * Brand/trademark terms hash: term → policy ('flag'|'reject'). A HASH (not a
+   * SET) because the check is substring-against-host with a per-term policy, not
+   * O(1) membership. Rebuilt from Postgres at boot and on admin mutation (§14.13).
+   */
+  brandTerms: 'brand:terms',
 
   /** Sliding-window rate-limit bucket. */
   rateLimit: (bucket: string, id: string) => `rl:${bucket}:${id}`,

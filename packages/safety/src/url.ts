@@ -1,4 +1,4 @@
-import { BRAND_TERMS, KNOWN_SHORTENERS, MAX_DESTINATION_URL_LENGTH } from '@clipal/config/constants';
+import { KNOWN_SHORTENERS, MAX_DESTINATION_URL_LENGTH } from '@clipal/config/constants';
 import { parse as parseDomain } from 'tldts';
 import { isUnsafeHost } from './ssrf';
 
@@ -18,10 +18,12 @@ export interface ValidatedUrl {
   host: string;
   /** Registrable domain (eTLD+1), used for blocklist lookups. */
   etld1: string;
+  /** Second-level label (domain without public suffix), used for the brand check. */
+  sld: string;
 }
 
 export type SyntaxResult =
-  | { ok: true; value: ValidatedUrl; brandFlag: boolean }
+  | { ok: true; value: ValidatedUrl }
   | { ok: false; reason: RejectReason; message: string };
 
 function fail(reason: RejectReason, message: string): SyntaxResult {
@@ -34,10 +36,9 @@ function fail(reason: RejectReason, message: string): SyntaxResult {
  *  - length ≤ 2048, parseable, http/https only, no embedded credentials
  *  - reject IP literals / localhost / private / internal hosts (SSRF)
  *  - reject other known shorteners (no shortener-of-shortener loops)
- *  - compute a soft `brandFlag` for trademark lookalikes (e.g. paypal-login.com)
  *
- * The blocklist (Redis) and Google Safe Browsing checks are async — see
- * `isDomainBlocked` and `scanUrl`.
+ * The blocklist, brand-term and Google Safe Browsing checks are async (they read
+ * Redis / the network) — see `isDomainBlocked`, `checkBrandTerms` and `scanUrl`.
  */
 export function validateDestination(raw: string): SyntaxResult {
   const trimmed = raw.trim();
@@ -76,11 +77,5 @@ export function validateDestination(raw: string): SyntaxResult {
     );
   }
 
-  // Trademark lookalike heuristic: a brand term appears in the host but the
-  // registrable domain's SLD isn't exactly that brand (so it's not the genuine
-  // brand domain). Soft flag → the link is created as pending_review, not
-  // hard-rejected, to limit false positives. (Policy: TODO(@owner), §14.13.)
-  const brandFlag = BRAND_TERMS.some((term) => host.includes(term) && sld !== term);
-
-  return { ok: true, value: { url: url.href, host, etld1 }, brandFlag };
+  return { ok: true, value: { url: url.href, host, etld1, sld } };
 }
