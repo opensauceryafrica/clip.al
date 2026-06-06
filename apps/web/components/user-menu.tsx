@@ -11,10 +11,12 @@ import {
 } from '@clipal/ui';
 import { ChevronDown, LogOut, Settings, Shield } from 'lucide-react';
 import Link from 'next/link';
+import { useRef } from 'react';
 
 export function UserMenu({ user }: { user: SessionUser }) {
   const isAdmin = user.role === 'admin' || user.role === 'moderator';
   const initial = (user.displayName ?? user.email).charAt(0).toUpperCase();
+  const logoutFormRef = useRef<HTMLFormElement>(null);
 
   return (
     <DropdownMenu>
@@ -41,13 +43,19 @@ export function UserMenu({ user }: { user: SessionUser }) {
           </DropdownMenuItem>
         ) : null}
         <DropdownMenuSeparator />
-        <DropdownMenuItem asChild>
-          <form action="/logout" method="post" className="w-full">
-            <button type="submit" className="flex w-full items-center gap-2">
-              <LogOut className="size-4" /> Sign out
-            </button>
-          </form>
-        </DropdownMenuItem>
+        <form ref={logoutFormRef} action="/logout" method="post">
+          <DropdownMenuItem
+            // Radix closes (and unmounts) the menu on select, which would tear
+            // this form down before the browser submits it — so the click looked
+            // dead. Keep the menu mounted, then fire the POST ourselves.
+            onSelect={(event) => {
+              event.preventDefault();
+              logoutFormRef.current?.requestSubmit();
+            }}
+          >
+            <LogOut className="size-4" /> Sign out
+          </DropdownMenuItem>
+        </form>
       </DropdownMenuContent>
     </DropdownMenu>
   );
