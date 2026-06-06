@@ -1,3 +1,5 @@
+import { captureException } from '@clipal/observability';
+
 /**
  * Tiny interval scheduler. Runs a job immediately and then every `ms`, never
  * overlapping a slow run, and never letting a job error kill the process.
@@ -11,6 +13,7 @@ export function every(name: string, ms: number, job: () => Promise<void>): NodeJ
       await job();
     } catch (err) {
       console.error(`[${name}] error`, err);
+      captureException(err, { job: name });
     } finally {
       running = false;
     }

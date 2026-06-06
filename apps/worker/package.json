@@ -14,6 +14,7 @@
     "@clipal/config": "workspace:*",
     "@clipal/db": "workspace:*",
     "@clipal/email": "workspace:*",
+    "@clipal/observability": "workspace:*",
     "@clipal/safety": "workspace:*",
     "maxmind": "catalog:",
     "tsx": "catalog:",

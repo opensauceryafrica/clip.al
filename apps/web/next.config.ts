@@ -11,13 +11,32 @@ const config: NextConfig = {
   output: 'standalone',
   // Trace from the monorepo root so the standalone bundle includes workspace deps.
   outputFileTracingRoot: repoRoot,
-  // @node-rs/argon2 ships a native .node binary — never bundle it; require() it at
-  // runtime on the server (auth is server-only). serverExternalPackages alone
-  // isn't enough because argon2 is reached through a transpiled workspace package
-  // (@clipal/auth), so we also force it external in the server webpack config.
-  serverExternalPackages: ['@node-rs/argon2'],
+  // @node-rs/argon2 (native .node binary, server-only auth) and @sentry/node
+  // (heavy server-only SDK pulling in OpenTelemetry) must be require()d at runtime,
+  // never webpack-bundled. Two things are needed, and BOTH are load-bearing:
+  //
+  //  1. serverExternalPackages — includes them in the node-file-trace so they land
+  //     in .next/standalone/node_modules. This only works because both are listed
+  //     as DIRECT dependencies of this app (not just transitive via @clipal/auth /
+  //     @clipal/observability); otherwise the tracer can't resolve them from the
+  //     app dir and the standalone server crashes at boot with "Cannot find module".
+  //
+  //  2. The webpack `commonjs` external below — serverExternalPackages alone does
+  //     NOT stop webpack from bundling them, because they're reached through
+  //     transpilePackages workspace packages (@clipal/auth, @clipal/observability),
+  //     whose code IS compiled by webpack. Bundling @sentry/node pulls in OTel
+  //     modules that require() Node builtins (diagnostics_channel, path, …) and the
+  //     build fails. Forcing them external as `commonjs <name>` emits require()
+  //     instead. (A bare-string external would default to webpack's `var` type —
+  //     `const x = @sentry/node` — which is invalid JS, so the commonjs form is
+  //     required.)
+  serverExternalPackages: ['@node-rs/argon2', '@sentry/node'],
   webpack(config: { externals: unknown[] }, { isServer }: { isServer: boolean }) {
-    if (isServer) config.externals.push('@node-rs/argon2');
+    if (isServer)
+      config.externals.push({
+        '@node-rs/argon2': 'commonjs @node-rs/argon2',
+        '@sentry/node': 'commonjs @sentry/node',
+      });
     return config;
   },
   // Internal packages export TypeScript source; Next transpiles them in-place.
@@ -31,6 +50,7 @@ const config: NextConfig = {
     '@clipal/shorten',
     '@clipal/ui',
     '@clipal/email',
+    '@clipal/observability',
   ],
   // Clean public short links are `clip.al/CODE`. This `afterFiles` rewrite maps
   // a bare single-segment path to the redirect handler — and because afterFiles

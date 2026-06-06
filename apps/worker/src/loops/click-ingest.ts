@@ -1,6 +1,7 @@
 import { createRedis, keys, redis } from '@clipal/cache';
 import { insertClicks, toChDateTime, type ClickRow } from '@clipal/ch';
 import { db, eq, links, sql } from '@clipal/db';
+import { captureException } from '@clipal/observability';
 import { geoLookup } from '../lib/geo';
 import { getDailySalt, hashIp, utcDateKey } from '../lib/salt';
 import { parseUa } from '../lib/ua';
@@ -195,6 +196,7 @@ export async function runClickIngest(signal: AbortSignal): Promise<void> {
       if (fresh.length > 0) await processEntries(fresh);
     } catch (err) {
       console.error('[click-ingest] loop error', err);
+      captureException(err, { loop: 'click-ingest' });
       await sleep(1000);
     }
   }

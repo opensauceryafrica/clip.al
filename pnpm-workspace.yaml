@@ -17,6 +17,9 @@ catalog:
   '@types/react': ^19.0.4
   '@types/react-dom': ^19.0.2
 
+  # Observability
+  '@sentry/node': ^8.47.0
+
   # Data layer
   drizzle-orm: ^0.38.3
   drizzle-kit: ^0.30.1

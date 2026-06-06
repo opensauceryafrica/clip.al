@@ -1,3 +1,4 @@
+import { captureException, flushSentry, initSentry } from '@clipal/observability';
 import { startHealthServer } from './health';
 import { initGeo } from './lib/geo';
 import { getDailySalt } from './lib/salt';
@@ -15,6 +16,9 @@ const MINUTE = 60_000;
  */
 async function main(): Promise<void> {
   console.log('[worker] starting');
+  // Init early so the SDK's unhandledRejection/uncaughtException handlers are
+  // armed before any loop starts (no-op + one [boot] line unless SENTRY_DSN set).
+  initSentry('worker');
   startHealthServer(Number(process.env['WORKER_HEALTH_PORT'] ?? 9090));
   await initGeo();
 
@@ -34,7 +38,10 @@ async function main(): Promise<void> {
   const shutdown = (signal: string): void => {
     console.log(`[worker] ${signal} — shutting down`);
     controller.abort();
-    setTimeout(() => process.exit(0), 2000);
+    // Give in-flight work 2s to settle, then flush buffered Sentry events.
+    setTimeout(() => {
+      void flushSentry(1500).finally(() => process.exit(0));
+    }, 2000);
   };
   process.on('SIGTERM', () => shutdown('SIGTERM'));
   process.on('SIGINT', () => shutdown('SIGINT'));
@@ -44,5 +51,6 @@ async function main(): Promise<void> {
 
 main().catch((err: unknown) => {
   console.error('[worker] fatal', err);
-  process.exit(1);
+  captureException(err, { fatal: true });
+  void flushSentry(2000).finally(() => process.exit(1));
 });
