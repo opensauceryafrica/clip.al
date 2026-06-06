@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // The worker renders React Email templates to HTML for notifications, so it
+    // consumes @clipal/email's .tsx source — needs jsx + react types + DOM lib.
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "types": ["node"]
+  },
+  "include": ["src/**/*.ts"]
+}
