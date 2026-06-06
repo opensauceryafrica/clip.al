@@ -1,0 +1,54 @@
+# clip.al — Caddy 2 reverse proxy
+# Auto-TLS via Let's Encrypt for the apex and the wildcard (wildcard requires a
+# DNS-01 challenge — configure a DNS provider plugin in production; see the
+# commented `tls` block). Terminates TLS and forwards the real client IP so the
+# app can rate-limit and geo-tag accurately.
+
+{
+	email admin@clip.al
+	# For local/staging testing without burning Let's Encrypt rate limits:
+	# acme_ca https://acme-staging-v02.api.letsencrypt.org/directory
+}
+
+# Reusable snippet: static, uniform security headers.
+# NOTE: Referrer-Policy and Content-Security-Policy are intentionally NOT set
+# here — the app owns them. The redirect hot path needs `Referrer-Policy:
+# no-referrer` per response, and CSP carries a per-request nonce generated in
+# Next.js middleware. Setting them in Caddy would clobber those.
+(security_headers) {
+	header {
+		Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Permissions-Policy "accelerometer=(), autoplay=(), camera=(), display-capture=(), encrypted-media=(), fullscreen=(self), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), midi=(), payment=(), usb=()"
+		# Hide upstream/server fingerprinting.
+		-Server
+		-X-Powered-By
+	}
+}
+
+clip.al, *.clip.al {
+	# Wildcard certs need DNS-01. Uncomment and configure for *.clip.al in prod:
+	# tls {
+	# 	dns cloudflare {env.CLOUDFLARE_API_TOKEN}
+	# }
+
+	encode zstd gzip
+	import security_headers
+
+	# Forward the real client IP to the app. Required by the redirect hot path
+	# (§9), rate limiting (§14) and analytics (§10) — applied to ALL routes, not
+	# just /r and /p, because /signin and the shorten API rate-limit by IP too.
+	reverse_proxy web:3000 {
+		header_up X-Real-IP {remote_host}
+		header_up X-Forwarded-For {remote_host}
+		header_up X-Forwarded-Proto {scheme}
+	}
+
+	log {
+		output stdout
+		format console
+		# Do not log full URLs of /r and /p (they contain user link codes); the
+		# app handles click analytics. Keep Caddy access logs lean.
+	}
+}

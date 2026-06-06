@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancel superseded runs on the same ref.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: typecheck · lint · test · build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Unit tests
+        run: pnpm test
+
+      - name: Build web
+        run: pnpm build
+        env:
+          # Build-time env. Real secrets are injected at runtime via Docker.
+          # A non-empty SESSION_SECRET keeps packages/config's zod validation
+          # happy during `next build` (no external calls are made).
+          NODE_ENV: production
+          APP_URL: https://clip.al
+          # 128 hex chars = 64 bytes. CI-only placeholder, never a real secret.
+          SESSION_SECRET: '00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000'
+          COOKIE_DOMAIN: clip.al
+          DATABASE_URL: postgres://clipal:clipal@localhost:5432/clipal
+          REDIS_URL: redis://localhost:6379
+          CLICKHOUSE_URL: http://localhost:8123
+          CLICKHOUSE_USER: default
+          CLICKHOUSE_DATABASE: clipal
+          S3_ENDPOINT: http://localhost:9000
+          S3_REGION: us-east-1
+          S3_BUCKET: clipal
+          S3_ACCESS_KEY: clipal
+          S3_SECRET_KEY: clipal
+          S3_PUBLIC_URL: https://cdn.clip.al
+          RESEND_API_KEY: re_ci_placeholder
+          EMAIL_FROM: clip.al <no-reply@clip.al>
+          TURNSTILE_SITE_KEY: 1x00000000000000000000AA
+          TURNSTILE_SECRET_KEY: 1x0000000000000000000000000000000AA
+          GSB_API_KEY: ci_placeholder

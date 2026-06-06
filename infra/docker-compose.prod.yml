@@ -1,0 +1,56 @@
+# Production overlay. Apply on top of the base file:
+#   docker compose -f infra/docker-compose.yml -f infra/docker-compose.prod.yml --env-file .env up -d
+# Adds log rotation and conservative resource limits so a single noisy service
+# cannot starve a modest VPS. Tune the limits to your box.
+
+services:
+  postgres:
+    logging: &json-logging
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '5'
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+
+  redis:
+    logging: *json-logging
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+
+  clickhouse:
+    logging: *json-logging
+    deploy:
+      resources:
+        limits:
+          memory: 2g
+
+  minio:
+    logging: *json-logging
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+
+  web:
+    logging: *json-logging
+    deploy:
+      replicas: 2 # Caddy load-balances across replicas; redirect hot path scales horizontally.
+      resources:
+        limits:
+          memory: 768m
+
+  worker:
+    logging: *json-logging
+    deploy:
+      replicas: 1 # Single consumer group; scale consumers carefully (see apps/worker README).
+      resources:
+        limits:
+          memory: 768m
+
+  caddy:
+    logging: *json-logging

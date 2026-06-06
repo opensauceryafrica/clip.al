@@ -1,0 +1,98 @@
+# Optional: self-hosted GlitchTip (Sentry-API-compatible error tracking).
+# Kept separate so the core stack stays lean. Bring up alongside the base file:
+#   docker compose -f infra/docker-compose.yml -f infra/docker-compose.observability.yml --env-file .env up -d
+#
+# Adapted from GlitchTip's official compose snippet. GlitchTip runs its OWN
+# Postgres and Redis — do not point it at the clip.al datastores. After it is
+# up, create an organization + project in the GlitchTip UI, copy the DSN, and
+# set SENTRY_DSN in .env so the web/worker SDK reports to it.
+#
+# Required extra env (add to .env):
+#   GLITCHTIP_SECRET_KEY=   # 50+ random chars
+#   GLITCHTIP_DOMAIN=https://errors.clip.al
+#   GLITCHTIP_DB_PASSWORD=CHANGEME
+
+name: clipal-observability
+
+volumes:
+  gt_pgdata:
+  gt_uploads:
+
+networks:
+  glitchtip:
+    driver: bridge
+
+x-gt-env: &gt-env
+  SECRET_KEY: ${GLITCHTIP_SECRET_KEY}
+  DATABASE_URL: postgres://glitchtip:${GLITCHTIP_DB_PASSWORD}@gt-postgres:5432/glitchtip
+  REDIS_URL: redis://gt-redis:6379/0
+  GLITCHTIP_DOMAIN: ${GLITCHTIP_DOMAIN}
+  DEFAULT_FROM_EMAIL: no-reply@clip.al
+  CELERY_WORKER_AUTOSCALE: '1,3'
+
+services:
+  gt-postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: glitchtip
+      POSTGRES_PASSWORD: ${GLITCHTIP_DB_PASSWORD}
+      POSTGRES_DB: glitchtip
+    volumes:
+      - gt_pgdata:/var/lib/postgresql/data
+    networks: [glitchtip]
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U glitchtip -d glitchtip']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  gt-redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    networks: [glitchtip]
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  glitchtip-web:
+    image: glitchtip/glitchtip:latest
+    restart: unless-stopped
+    depends_on:
+      gt-postgres: { condition: service_healthy }
+      gt-redis: { condition: service_healthy }
+    environment: *gt-env
+    volumes:
+      - gt_uploads:/code/uploads
+    ports:
+      - '8000:8080' # Front this with Caddy on errors.clip.al in production.
+    networks: [glitchtip]
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://localhost:8080/_health/ >/dev/null 2>&1 || exit 1']
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  glitchtip-worker:
+    image: glitchtip/glitchtip:latest
+    restart: unless-stopped
+    command: ['./bin/run-celery-with-beat.sh']
+    depends_on:
+      gt-postgres: { condition: service_healthy }
+      gt-redis: { condition: service_healthy }
+    environment: *gt-env
+    volumes:
+      - gt_uploads:/code/uploads
+    networks: [glitchtip]
+
+  glitchtip-migrate:
+    image: glitchtip/glitchtip:latest
+    command: ['./manage.py', 'migrate']
+    depends_on:
+      gt-postgres: { condition: service_healthy }
+    environment: *gt-env
+    networks: [glitchtip]
+    restart: 'no'

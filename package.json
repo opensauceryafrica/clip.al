@@ -1,0 +1,41 @@
+{
+  "name": "clipal",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "clip.al — URL shortener and link manager (Phase 1: Core Foundation)",
+  "engines": {
+    "node": ">=22"
+  },
+  "packageManager": "pnpm@9.15.9",
+  "scripts": {
+    "dev": "pnpm --filter @clipal/web dev",
+    "dev:worker": "pnpm --filter @clipal/worker dev",
+    "build": "pnpm --filter @clipal/web build",
+    "start": "pnpm --filter @clipal/web start",
+    "start:worker": "pnpm --filter @clipal/worker start",
+    "typecheck": "pnpm -r typecheck && tsc -p scripts/tsconfig.json",
+    "lint": "eslint .",
+    "test": "pnpm -r --if-present test",
+    "test:e2e": "playwright test",
+    "format": "prettier --write \"**/*.{ts,tsx,css,md,json,yaml,yml}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,css,md,json,yaml,yml}\"",
+    "migrate": "pnpm --filter @clipal/db migrate",
+    "migrate:create": "pnpm --filter @clipal/db generate",
+    "migrate:push": "pnpm --filter @clipal/db push",
+    "seed:admin": "tsx scripts/seed-admin.ts",
+    "migrate:abbrefy": "tsx scripts/migrate-abbrefy.ts"
+  },
+  "devDependencies": {
+    "@clipal/config": "workspace:*",
+    "@clipal/db": "workspace:*",
+    "@eslint/js": "catalog:",
+    "@playwright/test": "catalog:",
+    "@types/node": "catalog:",
+    "eslint": "catalog:",
+    "prettier": "catalog:",
+    "tsx": "catalog:",
+    "typescript": "catalog:",
+    "typescript-eslint": "catalog:"
+  }
+}

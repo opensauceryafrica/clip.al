@@ -1,0 +1,224 @@
+# clip.al — base stack. Run from repo root:
+#   docker compose -f infra/docker-compose.yml --env-file .env up -d
+# (the Makefile wraps this). Observability (GlitchTip) is a separate, optional
+# overlay: infra/docker-compose.observability.yml.
+#
+# Conventions: named volumes for every stateful service, a healthcheck on every
+# service, restart: unless-stopped everywhere. Datastores publish host ports bound
+# to 127.0.0.1 (loopback) so host-run scripts (migrate/seed) and a local `pnpm dev`
+# can reach them. In production, remove these `ports:` lines — Caddy is the sole
+# public ingress. NOTE: host-run migrate/seed need DATABASE_URL's host set to
+# `localhost` (the in-container value is `postgres`); or just use `make migrate`/
+# `make seed`, which run inside the web container.
+
+name: clipal
+
+x-restart: &restart unless-stopped
+
+networks:
+  clipal:
+    driver: bridge
+
+volumes:
+  pgdata:
+  redisdata:
+  chdata:
+  miniodata:
+  geoipdata:
+  caddy_data:
+  caddy_config:
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: *restart
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      # citext + gen_random_uuid() come from extensions created in migration 0000.
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - '127.0.0.1:5432:5432'
+    networks: [clipal]
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    restart: *restart
+    # AOF persistence, fsync every second (durable-ish, fast). The click stream
+    # and rate-limit counters live here; we can tolerate <1s loss on crash.
+    command: ['redis-server', '--appendonly', 'yes', '--appendfsync', 'everysec']
+    volumes:
+      - redisdata:/data
+    ports:
+      - '127.0.0.1:6379:6379'
+    networks: [clipal]
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24-alpine
+    restart: *restart
+    environment:
+      CLICKHOUSE_DB: ${CLICKHOUSE_DATABASE}
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: '1'
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    volumes:
+      - chdata:/var/lib/clickhouse
+      - ./clickhouse:/docker-entrypoint-initdb.d:ro
+    ports:
+      - '127.0.0.1:8123:8123'
+    networks: [clipal]
+    healthcheck:
+      # clickhouse-client is present in the image (wget/curl are not). The user/
+      # password come from the container env so this works whether or not a
+      # CLICKHOUSE_PASSWORD is set (the =empty form avoids an interactive prompt).
+      test:
+        [
+          'CMD-SHELL',
+          'clickhouse-client --user "$${CLICKHOUSE_USER}" --password "$${CLICKHOUSE_PASSWORD}" --query "SELECT 1" || exit 1',
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+
+  minio:
+    image: minio/minio:latest
+    restart: *restart
+    command: ['server', '/data', '--console-address', ':9001']
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    volumes:
+      - miniodata:/data
+    ports:
+      - '127.0.0.1:9000:9000'
+      - '127.0.0.1:9001:9001'
+    networks: [clipal]
+    healthcheck:
+      test: ['CMD-SHELL', 'curl -f http://localhost:9000/minio/health/live || exit 1']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # One-shot: create the bucket and make it private. Exits 0 when done.
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 $${MINIO_ROOT_USER} $${MINIO_ROOT_PASSWORD} &&
+      mc mb --ignore-existing local/$${S3_BUCKET} &&
+      mc anonymous set none local/$${S3_BUCKET} &&
+      echo 'bucket ready' "
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      S3_BUCKET: ${S3_BUCKET}
+    networks: [clipal]
+    restart: 'no'
+
+  web:
+    build:
+      context: ..
+      dockerfile: apps/web/Dockerfile
+    restart: *restart
+    env_file: ../.env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+    ports:
+      - '127.0.0.1:3000:3000'
+    networks: [clipal]
+    healthcheck:
+      # /api/ping is dependency-free (process liveness). /api/health is the rich
+      # operator status endpoint and may legitimately return 503 if a backing
+      # service is down, so it is unsuitable as a container healthcheck. The runtime
+      # image has node (not wget/curl), so use node's global fetch.
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://localhost:3000/api/ping').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  worker:
+    build:
+      context: ..
+      dockerfile: apps/worker/Dockerfile
+    restart: *restart
+    env_file: ../.env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+    volumes:
+      - geoipdata:/data/geoip
+    networks: [clipal]
+    healthcheck:
+      # The worker image has node (not wget/curl); use node's global fetch.
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://localhost:9090/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  caddy:
+    image: caddy:2-alpine
+    restart: *restart
+    depends_on:
+      web:
+        condition: service_healthy
+    ports:
+      - '80:80'
+      - '443:443'
+      - '443:443/udp' # HTTP/3
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [clipal]
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://localhost:2019/config/ >/dev/null 2>&1 || exit 1']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
