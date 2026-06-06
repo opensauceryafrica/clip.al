@@ -1,21 +1,10 @@
 import { and, db, desc, eq, ilike, links, or, type SQL } from '@clipal/db';
-import {
-  Button,
-  EmptyState,
-  Input,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@clipal/ui';
+import { Button, EmptyState, Input, Table, TableBody, TableHead, TableHeader, TableRow } from '@clipal/ui';
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { LinkStatusBadge } from '@/components/link-status-badge';
+import { LinkRow } from '@/components/link-row';
 import { PageHeader } from '@/components/page-header';
 import { requireUser } from '@/lib/auth';
-import { formatNumber, timeAgo, truncateMiddle } from '@/lib/format';
 
 export const metadata: Metadata = { title: 'Links' };
 export const dynamic = 'force-dynamic';
@@ -124,30 +113,7 @@ export default async function LinksPage({
               </TableHeader>
               <TableBody>
                 {visible.map((link) => (
-                  <TableRow key={link.id}>
-                    <TableCell>
-                      <Link
-                        href={`/links/${link.id}`}
-                        className="font-mono text-zinc-950 hover:underline dark:text-zinc-50"
-                      >
-                        {link.code}
-                      </Link>
-                    </TableCell>
-                    <TableCell className="max-w-sm">
-                      <span className="font-mono text-xs text-zinc-500">
-                        {truncateMiddle(link.destinationUrl, 56)}
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      <LinkStatusBadge status={link.status} />
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {formatNumber(link.clicksTotal)}
-                    </TableCell>
-                    <TableCell className="text-right text-xs text-zinc-500">
-                      {timeAgo(link.createdAt)}
-                    </TableCell>
-                  </TableRow>
+                  <LinkRow key={link.id} link={link} />
                 ))}
               </TableBody>
             </Table>
