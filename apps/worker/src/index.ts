@@ -3,6 +3,7 @@ import { startHealthServer } from './health';
 import { initGeo } from './lib/geo';
 import { getDailySalt } from './lib/salt';
 import { runClickIngest } from './loops/click-ingest';
+import { purgeDeletedAccounts } from './loops/purge';
 import { reapAuthCodes, reapSessions } from './loops/reapers';
 import { runRescan } from './loops/rescan';
 import { every } from './scheduler';
@@ -31,6 +32,7 @@ async function main(): Promise<void> {
   });
   every('reap-auth-codes', 5 * MINUTE, reapAuthCodes); // §18.5
   every('reap-sessions', 24 * 60 * MINUTE, reapSessions); // §18.6
+  every('account-purge', 24 * 60 * MINUTE, purgeDeletedAccounts); // §18.x daily hard-delete
 
   // Long-running click ingest (§18.1).
   const ingest = runClickIngest(controller.signal);

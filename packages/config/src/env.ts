@@ -76,6 +76,10 @@ const schema = z
     GEOIP_DIR: z.string().default('/data/geoip'),
     MAXMIND_LICENSE_KEY: z.string().default(''),
 
+    // Account purge: grace period (days) a soft-deleted account is retained
+    // before the daily worker job hard-deletes it. Default 30.
+    ACCOUNT_PURGE_GRACE_DAYS: z.coerce.number().int().positive().default(30),
+
     // Admin bootstrap
     INITIAL_ADMIN_EMAIL: z.string().email().optional().or(z.literal('')),
     INITIAL_ADMIN_NAME: z.string().default('Owner'),
