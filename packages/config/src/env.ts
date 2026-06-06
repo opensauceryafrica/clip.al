@@ -75,6 +75,9 @@ const schema = z
     // Worker / GeoIP
     GEOIP_DIR: z.string().default('/data/geoip'),
     MAXMIND_LICENSE_KEY: z.string().default(''),
+    // Comma-separated MaxMind edition IDs the refresh job downloads. Only
+    // GeoLite2-City is consumed by the click pipeline; others are future-use.
+    MAXMIND_EDITION_IDS: z.string().default('GeoLite2-City'),
 
     // Account purge: grace period (days) a soft-deleted account is retained
     // before the daily worker job hard-deletes it. Default 30.

@@ -3,6 +3,8 @@ import { startHealthServer } from './health';
 import { initGeo } from './lib/geo';
 import { getDailySalt } from './lib/salt';
 import { runClickIngest } from './loops/click-ingest';
+import { env } from '@clipal/config';
+import { refreshGeo } from './loops/geo-refresh';
 import { purgeDeletedAccounts } from './loops/purge';
 import { reapAuthCodes, reapSessions } from './loops/reapers';
 import { runRescan } from './loops/rescan';
@@ -33,6 +35,17 @@ async function main(): Promise<void> {
   every('reap-auth-codes', 5 * MINUTE, reapAuthCodes); // §18.5
   every('reap-sessions', 24 * 60 * MINUTE, reapSessions); // §18.6
   every('account-purge', 24 * 60 * MINUTE, purgeDeletedAccounts); // §18.x daily hard-delete
+
+  // §18.3 GeoLite2 refresh — only when a license key is configured. Runs at boot
+  // (downloads if missing/stale) and weekly thereafter. No-op + one boot line
+  // otherwise, mirroring the Sentry/GSB pattern.
+  if (env.MAXMIND_LICENSE_KEY) {
+    every('geo-refresh', 7 * 24 * 60 * MINUTE, refreshGeo);
+  } else {
+    console.warn(
+      '[boot] MAXMIND_LICENSE_KEY not set — GeoLite2 auto-refresh disabled (geo best-effort, country=ZZ)',
+    );
+  }
 
   // Long-running click ingest (§18.1).
   const ingest = runClickIngest(controller.signal);

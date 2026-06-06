@@ -17,6 +17,7 @@
     "@clipal/observability": "workspace:*",
     "@clipal/safety": "workspace:*",
     "maxmind": "catalog:",
+    "tar": "catalog:",
     "tsx": "catalog:",
     "ua-parser-js": "catalog:"
   },
