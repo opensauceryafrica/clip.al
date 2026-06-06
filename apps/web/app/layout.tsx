@@ -25,17 +25,18 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  colorScheme: 'light dark',
-  themeColor: [
-    { media: '(prefers-color-scheme: light)', color: '#fafafa' },
-    { media: '(prefers-color-scheme: dark)', color: '#09090b' },
-  ],
+  // Dark mode first (see CLAUDE.md): the app ships dark by default via the `dark`
+  // class on <html>. Light remains a supported secondary theme.
+  colorScheme: 'dark',
+  themeColor: '#09090b',
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" className={`${GeistSans.variable} ${GeistMono.variable}`}>
-      <body className="min-h-dvh font-sans antialiased">{children}</body>
+    <html lang="en" className={`dark ${GeistSans.variable} ${GeistMono.variable}`}>
+      <body className="min-h-dvh bg-background font-sans text-foreground antialiased">
+        {children}
+      </body>
     </html>
   );
 }

@@ -5,11 +5,16 @@
 @source '../../../packages/ui/src/**/*.{ts,tsx}';
 
 /*
- * clip.al design system — Vercel monochrome (§13).
- * Zinc scale only. 1px borders. Minimal radii. No gradients, no soft shadows.
- * Dark mode follows the OS via Tailwind v4's default `dark:` (prefers-color-scheme),
- * so there's no theme-flash and no JS needed.
+ * clip.al design system — Vercel monochrome, DARK MODE FIRST (§13, see CLAUDE.md).
+ * Zinc scale only. 1px borders. Minimal radii. No gradients, no neon shadows.
+ *
+ * Dark mode is CLASS-BASED and ON BY DEFAULT: `<html>` carries `dark`, so the
+ * app is dark first regardless of OS. Light remains a supported secondary theme
+ * (drop the `dark` class) for a future toggle. Components consume the ShadCN
+ * token layer below (bg-background, text-foreground, bg-card, border-border, …).
  */
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme {
   --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, 'SF Mono', Menlo, monospace;
@@ -18,57 +23,135 @@
   --radius: 0.375rem;
 }
 
+/* Map the runtime token variables to Tailwind color utilities (bg-background,
+ * text-muted-foreground, border-border, ring-ring, …). `inline` so the utilities
+ * resolve var(--token) at use-site and flip with the `.dark` class. */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+}
+
 @layer base {
-  /* Sensible default border color so every 1px border is zinc (§13). */
+  /* Token palette. :root = light (secondary), .dark = dark (primary/default).
+   * Built on the zinc scale so legacy raw-zinc utilities stay in lockstep. */
+  :root {
+    --background: var(--color-zinc-50);
+    --foreground: var(--color-zinc-950);
+    --card: #ffffff;
+    --card-foreground: var(--color-zinc-950);
+    --popover: #ffffff;
+    --popover-foreground: var(--color-zinc-950);
+    --primary: var(--color-zinc-900);
+    --primary-foreground: var(--color-zinc-50);
+    --secondary: var(--color-zinc-100);
+    --secondary-foreground: var(--color-zinc-900);
+    --muted: var(--color-zinc-100);
+    --muted-foreground: var(--color-zinc-500);
+    --accent: var(--color-zinc-100);
+    --accent-foreground: var(--color-zinc-900);
+    --destructive: var(--color-red-600);
+    --destructive-foreground: var(--color-zinc-50);
+    --border: var(--color-zinc-200);
+    --input: var(--color-zinc-200);
+    --ring: var(--color-zinc-950);
+  }
+
+  .dark {
+    --background: var(--color-zinc-950);
+    --foreground: var(--color-zinc-50);
+    --card: var(--color-zinc-900);
+    --card-foreground: var(--color-zinc-50);
+    --popover: var(--color-zinc-900);
+    --popover-foreground: var(--color-zinc-50);
+    --primary: var(--color-zinc-50);
+    --primary-foreground: var(--color-zinc-900);
+    --secondary: var(--color-zinc-800);
+    --secondary-foreground: var(--color-zinc-50);
+    --muted: var(--color-zinc-900);
+    --muted-foreground: var(--color-zinc-400);
+    --accent: var(--color-zinc-800);
+    --accent-foreground: var(--color-zinc-50);
+    --destructive: var(--color-red-600);
+    --destructive-foreground: var(--color-zinc-50);
+    --border: var(--color-zinc-800);
+    --input: var(--color-zinc-800);
+    --ring: var(--color-zinc-300);
+  }
+
+  /* Every 1px border defaults to the themed border token. */
   *,
   ::before,
   ::after {
-    border-color: var(--color-zinc-200);
-  }
-  @media (prefers-color-scheme: dark) {
-    *,
-    ::before,
-    ::after {
-      border-color: var(--color-zinc-800);
-    }
+    border-color: var(--border);
   }
 
   html {
     -webkit-text-size-adjust: 100%;
     text-rendering: optimizeLegibility;
+    color-scheme: dark;
   }
 
   body {
-    background-color: var(--color-zinc-50);
-    color: var(--color-zinc-950);
+    background-color: var(--background);
+    color: var(--foreground);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-  }
-
-  @media (prefers-color-scheme: dark) {
-    body {
-      background-color: var(--color-zinc-950);
-      color: var(--color-zinc-50);
-    }
+    font-feature-settings: 'cv11', 'ss01';
   }
 
   ::selection {
-    background-color: var(--color-zinc-200);
-  }
-  @media (prefers-color-scheme: dark) {
-    ::selection {
-      background-color: var(--color-zinc-800);
-    }
+    background-color: var(--accent);
+    color: var(--accent-foreground);
   }
 
-  /* Focus rings: crisp, monochrome, accessible. */
+  /* Focus rings: crisp, themed, accessible. */
   :focus-visible {
-    outline: 2px solid var(--color-zinc-950);
+    outline: 2px solid var(--ring);
     outline-offset: 2px;
   }
-  @media (prefers-color-scheme: dark) {
-    :focus-visible {
-      outline-color: var(--color-zinc-50);
-    }
+
+  /* Thin, monochrome scrollbars that fit the dark surface. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-zinc-700) transparent;
+  }
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background-color: var(--color-zinc-300);
+    border: 3px solid transparent;
+    border-radius: 9999px;
+    background-clip: padding-box;
+  }
+  .dark ::-webkit-scrollbar-thumb {
+    background-color: var(--color-zinc-700);
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: var(--color-zinc-400);
+  }
+  .dark ::-webkit-scrollbar-thumb:hover {
+    background-color: var(--color-zinc-600);
   }
 }
