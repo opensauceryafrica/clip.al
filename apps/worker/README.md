@@ -12,13 +12,19 @@ so any can later be split into its own container:
   Browsing; disables and notifies on newly-malicious ones.
 - **Reapers** — auth-code reaper (5 min) and session reaper (daily).
 - **Salt rotator** — keeps the current UTC-day IP-hash salt warm.
+- **Account purge** — daily; hard-deletes accounts soft-deleted longer than
+  `ACCOUNT_PURGE_GRACE_DAYS` (default 30), cascading to their data.
+- **GeoLite2 refresh** — startup + weekly; downloads/verifies the MaxMind
+  databases when `MAXMIND_LICENSE_KEY` is set (otherwise skipped).
 
 A liveness HTTP endpoint runs on `WORKER_HEALTH_PORT` (default 9090) for the
 container healthcheck.
 
-**GeoLite2:** mount `GeoLite2-City.mmdb` in `GEOIP_DIR`. Geo is best-effort — if
-the file is missing, ingest continues with `country=ZZ`. Refresh monthly (needs a
-`MAXMIND_LICENSE_KEY`; see OPEN_QUESTIONS.md).
+**GeoLite2:** the databases live in `GEOIP_DIR`. Geo is best-effort — if the file
+is missing, ingest continues with `country=ZZ`. With a `MAXMIND_LICENSE_KEY` set
+(free with a MaxMind account), the geo-refresh job downloads + sha256-verifies
+them at startup and weekly; without it, supply the `.mmdb` files manually.
+Editions are configurable via `MAXMIND_EDITION_IDS` (default `GeoLite2-City`).
 
 **Scaling:** the click consumer uses a single consumer group. To scale, run more
 worker replicas with distinct consumer names — Redis streams distribute pending

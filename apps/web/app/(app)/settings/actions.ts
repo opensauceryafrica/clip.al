@@ -39,9 +39,9 @@ export async function revokeSessionAction(formData: FormData): Promise<void> {
 
 /**
  * Soft-delete: mark the account deleted and log out everywhere. The account is
- * retained for 30 days then purged.
- * TODO(@owner): a 30-day hard-purge job isn't in the Phase 1 worker (§18) — add a
- * daily reaper that deletes users with status='deleted' older than 30 days.
+ * retained, then hard-deleted (with its links/sessions/auth codes) by the
+ * worker's daily `account-purge` job after ACCOUNT_PURGE_GRACE_DAYS (default 30)
+ * — see apps/worker/src/loops/purge.ts.
  */
 export async function deleteAccountAction(): Promise<void> {
   const user = await requireUser();

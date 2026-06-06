@@ -4,8 +4,9 @@ import { open, type CityResponse, type Reader } from 'maxmind';
 
 /**
  * MaxMind GeoLite2 City lookup. Best-effort: if the .mmdb isn't mounted, every
- * lookup returns country 'ZZ' and the worker keeps ingesting. The file is
- * refreshed monthly out-of-band (see the worker README / OPEN_QUESTIONS).
+ * lookup returns country 'ZZ' and the worker keeps ingesting. The file is kept
+ * fresh by the geo-refresh job (startup + weekly) when MAXMIND_LICENSE_KEY is
+ * set — see loops/geo-refresh.ts; otherwise supply the .mmdb files manually.
  */
 let reader: Reader<CityResponse> | null = null;
 
