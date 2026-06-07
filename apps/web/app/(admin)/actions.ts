@@ -185,14 +185,28 @@ export async function adminChangeRoleAction(formData: FormData): Promise<void> {
   const role = String(formData.get('role') ?? '');
   if (role !== 'user' && role !== 'moderator' && role !== 'admin') return;
 
+  // No-op if the role is unchanged (avoids needlessly logging the user out below).
+  const [current] = await db
+    .select({ role: users.role })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+  if (!current || current.role === role) return;
+
   await db.update(users).set({ role }).where(eq(users.id, userId));
   await invalidateUserCache(userId);
+  // Revoke the target's sessions so the new role takes effect immediately and
+  // everywhere: they must re-authenticate, which clears any stale client-side
+  // nav/route cache from their previous role. Without this a just-demoted admin
+  // keeps seeing the (cached) admin nav until a hard refresh — confusing, even
+  // though the server already blocks the actual admin routes per-request.
+  await revokeAllSessions(userId);
   await recordAudit(db, {
     actorId: admin.id,
     action: 'user.change_role',
     targetType: 'user',
     targetId: userId,
-    metadata: { role },
+    metadata: { role, from: current.role },
     ...(await auditContext()),
   });
   revalidatePath('/admin/users');
