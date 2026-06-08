@@ -160,6 +160,7 @@ export async function adminSuspendUserAction(formData: FormData): Promise<void> 
     ...(await auditContext()),
   });
   revalidatePath('/admin/users');
+  revalidatePath('/admin/users/[id]', 'page');
 }
 
 export async function adminUnsuspendUserAction(formData: FormData): Promise<void> {
@@ -175,6 +176,7 @@ export async function adminUnsuspendUserAction(formData: FormData): Promise<void
     ...(await auditContext()),
   });
   revalidatePath('/admin/users');
+  revalidatePath('/admin/users/[id]', 'page');
 }
 
 export async function adminChangeRoleAction(formData: FormData): Promise<void> {
@@ -210,6 +212,7 @@ export async function adminChangeRoleAction(formData: FormData): Promise<void> {
     ...(await auditContext()),
   });
   revalidatePath('/admin/users');
+  revalidatePath('/admin/users/[id]', 'page');
 }
 
 // ---- Blocklist --------------------------------------------------------------

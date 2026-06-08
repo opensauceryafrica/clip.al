@@ -12,6 +12,7 @@ import {
   TableRow,
 } from '@clipal/ui';
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import {
   adminChangeRoleAction,
   adminSuspendUserAction,
@@ -81,7 +82,11 @@ export default async function AdminUsersPage({
             <TableBody>
               {rows.map((u) => (
                 <TableRow key={u.id}>
-                  <TableCell className="max-w-[16rem] truncate">{u.email}</TableCell>
+                  <TableCell className="max-w-[16rem] truncate">
+                    <Link href={`/admin/users/${u.id}`} className="hover:underline">
+                      {u.email}
+                    </Link>
+                  </TableCell>
                   <TableCell>
                     {canChangeRoles ? (
                       <form action={adminChangeRoleAction} className="flex items-center gap-1">

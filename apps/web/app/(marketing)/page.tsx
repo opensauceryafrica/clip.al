@@ -3,6 +3,7 @@ import { Button } from '@clipal/ui';
 import { ArrowUpRight } from 'lucide-react';
 import Link from 'next/link';
 import { ShortenForm } from '@/components/shorten-form';
+import { getSessionUser } from '@/lib/auth';
 
 const FEATURES = [
   {
@@ -27,7 +28,8 @@ const COMING_SOON = [
   'Paid plans via Paystack',
 ];
 
-export default function LandingPage() {
+export default async function LandingPage() {
+  const user = await getSessionUser();
   return (
     <div className="mx-auto max-w-6xl px-6">
       <section className="py-20 sm:py-28">
@@ -41,7 +43,9 @@ export default function LandingPage() {
         </p>
         <div className="mt-6 flex flex-wrap items-center gap-3">
           <Button asChild>
-            <Link href="/signin">Get started</Link>
+            <Link href={user ? '/dashboard' : '/signin'}>
+              {user ? 'Go to dashboard' : 'Get started'}
+            </Link>
           </Button>
           <Button asChild variant="secondary">
             <a href="https://github.com/" target="_blank" rel="noopener noreferrer">
