@@ -15,10 +15,23 @@ export const SLUG_LENGTH = 7;
 export const SLUG_MAX_RETRIES = 3;
 
 /**
- * Shape a redirect code must match before we even touch Redis/Postgres.
- * Generous (4–32) to allow future custom slugs (Phase 2) without changing /r.
+ * Shape a redirect code must match before we even touch Redis/Postgres. Permissive
+ * (letters, digits, hyphen, underscore; 4–32) so generated AND custom slugs both
+ * resolve on /r. Set-time custom slugs are held to the stricter CUSTOM_SLUG_REGEX.
  */
-export const CODE_REGEX = /^[A-Za-z0-9]{4,32}$/;
+export const CODE_REGEX = /^[A-Za-z0-9_-]{4,32}$/;
+
+/** Bounds for a user-chosen custom back-half. */
+export const CUSTOM_SLUG_MIN_LENGTH = 4;
+export const CUSTOM_SLUG_MAX_LENGTH = 32;
+
+/**
+ * What a user may set a custom back-half to (§ custom slugs). Letters, digits,
+ * hyphen and underscore; must start and end alphanumeric (no leading/trailing or
+ * lonely separators), 4–32 chars. Case is preserved and codes resolve
+ * case-sensitively, same as generated slugs.
+ */
+export const CUSTOM_SLUG_REGEX = /^[A-Za-z0-9][A-Za-z0-9_-]{2,30}[A-Za-z0-9]$/;
 
 /** Hard cap on destination URL length (§14.1). */
 export const MAX_DESTINATION_URL_LENGTH = 2048;

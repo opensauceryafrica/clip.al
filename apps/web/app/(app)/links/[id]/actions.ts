@@ -1,8 +1,9 @@
 'use server';
 
-import { keys, redis } from '@clipal/cache';
+import { isReservedSlug, keys, redis } from '@clipal/cache';
 import { and, db, eq, links, recordAudit } from '@clipal/db';
 import { checkBrandTerms, isBlockedDomain, scanUrl, validateDestination } from '@clipal/safety';
+import { validateCustomSlug } from '@clipal/shorten';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import type { FormActionState } from '@/lib/action-state';
@@ -94,6 +95,56 @@ export async function editDestinationAction(
 
   // Invalidate the hot cache so the next redirect reflects the new URL + state.
   await redis.del(keys.hotLink(link.code)).catch(() => {});
+  revalidatePath(`/links/${linkId}`);
+  return { ok: true };
+}
+
+/**
+ * Change a link's back-half (custom slug). Renames `links.code`:
+ *  - the OLD short URL stops resolving (its hot-cache entry is dropped);
+ *  - analytics keep accumulating under the NEW code (ClickHouse is keyed by code,
+ *    so past clicks stay attributed to the old code — the UI warns about this).
+ * Validated for format (validateCustomSlug), reserved words, and uniqueness.
+ */
+export async function changeSlugAction(
+  _prev: FormActionState,
+  formData: FormData,
+): Promise<FormActionState> {
+  const user = await requireUser();
+  const linkId = String(formData.get('linkId') ?? '');
+
+  const link = await ownedLink(linkId, user.id);
+  if (!link) return { error: 'Link not found.' };
+
+  const parsed = validateCustomSlug(String(formData.get('code') ?? ''));
+  if (!parsed.ok) return { error: parsed.reason };
+  const code = parsed.value;
+
+  if (code === link.code) return { ok: true }; // unchanged — no-op
+
+  // Reserved words (app routes, brand/handle squatting) — case-insensitive set.
+  if (await isReservedSlug(code)) return { error: 'That back-half is reserved.' };
+
+  // Friendly pre-check; the unique index is the real guard against races below.
+  const [taken] = await db
+    .select({ id: links.id })
+    .from(links)
+    .where(eq(links.code, code))
+    .limit(1);
+  if (taken) return { error: 'That back-half is already taken.' };
+
+  try {
+    await db.update(links).set({ code }).where(eq(links.id, linkId));
+  } catch (err) {
+    if ((err as { code?: string }).code === '23505') {
+      return { error: 'That back-half is already taken.' };
+    }
+    throw err;
+  }
+
+  // Drop the old code's hot cache (so it 404s) and any negative entry for the new.
+  await redis.del(keys.hotLink(link.code)).catch(() => {});
+  await redis.del(keys.hotLink(code)).catch(() => {});
   revalidatePath(`/links/${linkId}`);
   return { ok: true };
 }

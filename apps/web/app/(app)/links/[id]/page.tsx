@@ -27,6 +27,7 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { BarChart, type BarPoint } from '@/components/bar-chart';
 import { EditDestinationForm } from '@/components/edit-destination-form';
+import { EditSlugForm } from '@/components/edit-slug-form';
 import { LinkDetailActions } from '@/components/link-detail-actions';
 import { LinkStatusBadge, SafetyBadge } from '@/components/link-status-badge';
 import { PageHeader } from '@/components/page-header';
@@ -94,6 +95,10 @@ export default async function LinkDetailPage({ params }: { params: Promise<{ id:
           </CardHeader>
           <CardContent className="space-y-4">
             <CodeBlock value={shortUrl} />
+            <div>
+              <p className="mb-2 text-xs text-zinc-500">Back-half</p>
+              <EditSlugForm linkId={link.id} code={link.code} baseUrl={getPublicBaseUrl()} />
+            </div>
             <div>
               <p className="mb-2 text-xs text-zinc-500">Destination</p>
               <EditDestinationForm linkId={link.id} destination={link.destinationUrl} />
