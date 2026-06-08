@@ -65,7 +65,7 @@ export default async function LinksPage({
         title="Links"
         action={
           <Button asChild size="sm">
-            <Link href="/">New link</Link>
+            <Link href="/links/new">New link</Link>
           </Button>
         }
       />

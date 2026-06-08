@@ -69,7 +69,7 @@ export default async function DashboardPage({
         description={welcome === 'back' ? 'Welcome back — your clip.al account is ready.' : undefined}
         action={
           <Button asChild size="sm">
-            <Link href="/">New link</Link>
+            <Link href="/links/new">New link</Link>
           </Button>
         }
       />
@@ -99,7 +99,7 @@ export default async function DashboardPage({
             description="Shorten your first link to see it here."
             action={
               <Button asChild size="sm">
-                <Link href="/">Create a link</Link>
+                <Link href="/links/new">Create a link</Link>
               </Button>
             }
           />

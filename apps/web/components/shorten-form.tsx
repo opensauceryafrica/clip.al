@@ -9,7 +9,7 @@ import { TurnstileWidget } from './turnstile';
 
 const initialState: ShortenState = { ok: false };
 
-export function ShortenForm({ siteKey }: { siteKey: string }) {
+export function ShortenForm({ siteKey }: { siteKey?: string }) {
   const [state, formAction, pending] = useActionState(shortenAction, initialState);
 
   return (
@@ -38,7 +38,8 @@ export function ShortenForm({ siteKey }: { siteKey: string }) {
             )}
           </Button>
         </div>
-        <TurnstileWidget siteKey={siteKey} />
+        {/* Captcha only for anonymous shortening; authed users skip it. */}
+        {siteKey ? <TurnstileWidget siteKey={siteKey} /> : null}
       </form>
 
       {state.ok && state.shortUrl ? (
@@ -57,7 +58,16 @@ export function ShortenForm({ siteKey }: { siteKey: string }) {
               </Link>{' '}
               within 24 hours.
             </p>
-          ) : null}
+          ) : (
+            <p className="text-sm text-zinc-500">
+              <Link
+                href="/links"
+                className="font-medium text-zinc-950 underline underline-offset-2 dark:text-zinc-50"
+              >
+                Manage it in your links →
+              </Link>
+            </p>
+          )}
         </div>
       ) : null}
 
