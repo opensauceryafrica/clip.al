@@ -59,7 +59,7 @@ export default async function AdminLinkDetailPage({ params }: { params: Promise<
       .where(eq(linkReports.linkId, id))
       .orderBy(desc(linkReports.createdAt))
       .limit(50),
-    linkRecentClicks(link.code, 50).catch(() => []),
+    linkRecentClicks([link.code], 50).catch(() => []),
   ]);
 
   return (

@@ -32,13 +32,26 @@ export interface LinkRow {
   interstitial_required: boolean;
 }
 
-/** Single indexed lookup by unique code. Returns the row or null. */
+/**
+ * Resolve a code to its link. Tries the current code (unique index) first; on a
+ * miss, resolves an old back-half via the GIN-indexed `previous_codes` array so
+ * renamed links keep redirecting. The common path is the single exact query; the
+ * alias query only runs on an exact miss (rare, and itself behind the Redis cache).
+ */
 export async function lookupLink(code: string): Promise<LinkRow | null> {
-  const rows = await hotPg<LinkRow[]>`
+  const exact = await hotPg<LinkRow[]>`
     SELECT id, destination_url, owner_id, status, safety_state, interstitial_required
     FROM links
     WHERE code = ${code}
     LIMIT 1
   `;
-  return rows[0] ?? null;
+  if (exact[0]) return exact[0];
+
+  const alias = await hotPg<LinkRow[]>`
+    SELECT id, destination_url, owner_id, status, safety_state, interstitial_required
+    FROM links
+    WHERE previous_codes @> ${[code]}
+    LIMIT 1
+  `;
+  return alias[0] ?? null;
 }

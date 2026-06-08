@@ -25,6 +25,9 @@ export const CODE_REGEX = /^[A-Za-z0-9_-]{4,32}$/;
 export const CUSTOM_SLUG_MIN_LENGTH = 4;
 export const CUSTOM_SLUG_MAX_LENGTH = 32;
 
+/** How many old back-halves a link keeps redirecting (most recent kept). */
+export const CUSTOM_SLUG_HISTORY_MAX = 5;
+
 /**
  * What a user may set a custom back-half to (§ custom slugs). Letters, digits,
  * hyphen and underscore; must start and end alphanumeric (no leading/trailing or

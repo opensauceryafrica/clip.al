@@ -1,9 +1,10 @@
 'use server';
 
 import { isReservedSlug, keys, redis } from '@clipal/cache';
-import { and, db, eq, links, recordAudit } from '@clipal/db';
+import { CUSTOM_SLUG_HISTORY_MAX } from '@clipal/config/constants';
+import { and, db, eq, links, or, recordAudit, sql } from '@clipal/db';
 import { checkBrandTerms, isBlockedDomain, scanUrl, validateDestination } from '@clipal/safety';
-import { validateCustomSlug } from '@clipal/shorten';
+import { rollPreviousCodes, validateCustomSlug } from '@clipal/shorten';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import type { FormActionState } from '@/lib/action-state';
@@ -15,6 +16,7 @@ async function ownedLink(linkId: string, userId: string) {
     .select({
       id: links.id,
       code: links.code,
+      previousCodes: links.previousCodes,
       status: links.status,
       destinationUrl: links.destinationUrl,
     })
@@ -125,16 +127,27 @@ export async function changeSlugAction(
   // Reserved words (app routes, brand/handle squatting) — case-insensitive set.
   if (await isReservedSlug(code)) return { error: 'That back-half is reserved.' };
 
-  // Friendly pre-check; the unique index is the real guard against races below.
-  const [taken] = await db
+  // Taken if it's another link's current code OR one of its old back-halves
+  // (aliases still redirect, so they can't be re-registered). Reclaiming THIS
+  // link's own old back-half is allowed (it's just promoted back to primary).
+  const [holder] = await db
     .select({ id: links.id })
     .from(links)
-    .where(eq(links.code, code))
+    .where(or(eq(links.code, code), sql`${links.previousCodes} @> ARRAY[${code}]::text[]`))
     .limit(1);
-  if (taken) return { error: 'That back-half is already taken.' };
+  if (holder && holder.id !== linkId) return { error: 'That back-half is already taken.' };
+
+  // Keep the retired back-half as an alias (capped); drop the new one if it was
+  // a prior alias of this link.
+  const previousCodes = rollPreviousCodes(
+    link.previousCodes,
+    link.code,
+    code,
+    CUSTOM_SLUG_HISTORY_MAX,
+  );
 
   try {
-    await db.update(links).set({ code }).where(eq(links.id, linkId));
+    await db.update(links).set({ code, previousCodes }).where(eq(links.id, linkId));
   } catch (err) {
     if ((err as { code?: string }).code === '23505') {
       return { error: 'That back-half is already taken.' };
@@ -142,7 +155,8 @@ export async function changeSlugAction(
     throw err;
   }
 
-  // Drop the old code's hot cache (so it 404s) and any negative entry for the new.
+  // Re-resolve both codes fresh: the new code resolves exactly; the old one now
+  // resolves via the alias lookup (so it keeps redirecting here).
   await redis.del(keys.hotLink(link.code)).catch(() => {});
   await redis.del(keys.hotLink(code)).catch(() => {});
   revalidatePath(`/links/${linkId}`);

@@ -38,8 +38,8 @@ export function EditSlugForm({
         </Button>
       </div>
       <p className="text-xs text-muted-foreground">
-        Letters, numbers, hyphens, underscores (4–32). Changing this breaks the old short link;
-        the analytics view follows the new back-half.
+        Letters, numbers, hyphens, underscores (4–32). The old back-half keeps redirecting here and
+        its analytics are preserved.
       </p>
       {state.error ? <p className="text-sm text-destructive">{state.error}</p> : null}
       {state.ok ? <p className="text-sm text-emerald-600">Back-half updated.</p> : null}

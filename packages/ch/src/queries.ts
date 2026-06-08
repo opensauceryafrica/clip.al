@@ -17,56 +17,59 @@ async function rows<T>(query: string, params: Record<string, unknown>): Promise<
 
 // ---- Per-link (link detail page) -------------------------------------------
 
-export function linkClicksByDay(linkCode: string, days = 30): Promise<DailyClicks[]> {
+// `codes` is the link's current back-half plus any previous ones, so analytics
+// span renames (ClickHouse is keyed by link_code). `link_code IN (…)` stays a
+// range scan over the ORDER BY prefix for each code.
+export function linkClicksByDay(codes: string[], days = 30): Promise<DailyClicks[]> {
   return rows<DailyClicks>(
     `SELECT toString(toDate(ts)) AS day, count() AS clicks, uniqExact(ip_hash) AS uniques
      FROM clicks
-     WHERE link_code = {code:String}
+     WHERE link_code IN {codes:Array(String)}
        AND ts >= now() - INTERVAL {days:UInt32} DAY
        AND is_bot = 0
      GROUP BY day ORDER BY day`,
-    { code: linkCode, days },
+    { codes, days },
   );
 }
 
-export function linkTopCountries(linkCode: string, days = 30, limit = 10): Promise<NamedCount[]> {
+export function linkTopCountries(codes: string[], days = 30, limit = 10): Promise<NamedCount[]> {
   return rows<NamedCount>(
     `SELECT country AS name, count() AS clicks
      FROM clicks
-     WHERE link_code = {code:String} AND ts >= now() - INTERVAL {days:UInt32} DAY AND is_bot = 0
+     WHERE link_code IN {codes:Array(String)} AND ts >= now() - INTERVAL {days:UInt32} DAY AND is_bot = 0
      GROUP BY name ORDER BY clicks DESC LIMIT {limit:UInt32}`,
-    { code: linkCode, days, limit },
+    { codes, days, limit },
   );
 }
 
-export function linkTopReferrers(linkCode: string, days = 30, limit = 10): Promise<NamedCount[]> {
+export function linkTopReferrers(codes: string[], days = 30, limit = 10): Promise<NamedCount[]> {
   return rows<NamedCount>(
     `SELECT if(referrer_host = '', 'direct', referrer_host) AS name, count() AS clicks
      FROM clicks
-     WHERE link_code = {code:String} AND ts >= now() - INTERVAL {days:UInt32} DAY AND is_bot = 0
+     WHERE link_code IN {codes:Array(String)} AND ts >= now() - INTERVAL {days:UInt32} DAY AND is_bot = 0
      GROUP BY name ORDER BY clicks DESC LIMIT {limit:UInt32}`,
-    { code: linkCode, days, limit },
+    { codes, days, limit },
   );
 }
 
-export function linkDevices(linkCode: string, days = 30): Promise<NamedCount[]> {
+export function linkDevices(codes: string[], days = 30): Promise<NamedCount[]> {
   return rows<NamedCount>(
     `SELECT device AS name, count() AS clicks
      FROM clicks
-     WHERE link_code = {code:String} AND ts >= now() - INTERVAL {days:UInt32} DAY AND is_bot = 0
+     WHERE link_code IN {codes:Array(String)} AND ts >= now() - INTERVAL {days:UInt32} DAY AND is_bot = 0
      GROUP BY name ORDER BY clicks DESC`,
-    { code: linkCode, days },
+    { codes, days },
   );
 }
 
-export function linkRecentClicks(linkCode: string, limit = 100): Promise<RecentClick[]> {
+export function linkRecentClicks(codes: string[], limit = 100): Promise<RecentClick[]> {
   return rows<RecentClick>(
     `SELECT toString(ts) AS ts, country, city, device, ua_family, ua_os, referrer_host,
             is_bot, is_interstitial
      FROM clicks
-     WHERE link_code = {code:String}
+     WHERE link_code IN {codes:Array(String)}
      ORDER BY ts DESC LIMIT {limit:UInt32}`,
-    { code: linkCode, limit },
+    { codes, limit },
   );
 }
 

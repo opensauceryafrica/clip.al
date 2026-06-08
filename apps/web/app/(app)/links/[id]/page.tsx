@@ -70,12 +70,15 @@ export default async function LinkDetailPage({ params }: { params: Promise<{ id:
     .limit(1);
   if (!link) notFound();
 
+  // Analytics span the current back-half plus any previous ones (renames keep
+  // their history) — ClickHouse is keyed by link_code.
+  const codes = [link.code, ...link.previousCodes];
   const [daily, countries, referrers, devices, recent] = await Promise.all([
-    safe(linkClicksByDay(link.code, 30), []),
-    safe(linkTopCountries(link.code, 30, 8), []),
-    safe(linkTopReferrers(link.code, 30, 8), []),
-    safe(linkDevices(link.code, 30), []),
-    safe(linkRecentClicks(link.code, 100), []),
+    safe(linkClicksByDay(codes, 30), []),
+    safe(linkTopCountries(codes, 30, 8), []),
+    safe(linkTopReferrers(codes, 30, 8), []),
+    safe(linkDevices(codes, 30), []),
+    safe(linkRecentClicks(codes, 100), []),
   ]);
 
   const shortUrl = `${getPublicBaseUrl()}/${link.code}`;
@@ -115,6 +118,13 @@ export default async function LinkDetailPage({ params }: { params: Promise<{ id:
                 {link.lastClickAt ? formatDateTime(link.lastClickAt) : 'Never'}
               </KeyValueRow>
               <KeyValueRow label="Created">{formatDate(link.createdAt)}</KeyValueRow>
+              {link.previousCodes.length > 0 ? (
+                <KeyValueRow label="Old back-halves">
+                  <span className="font-mono text-xs text-muted-foreground">
+                    {link.previousCodes.join(', ')}
+                  </span>
+                </KeyValueRow>
+              ) : null}
             </KeyValue>
           </CardContent>
         </Card>

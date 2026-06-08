@@ -39,3 +39,25 @@ export function validateCustomSlug(raw: string): CustomSlugResult {
   }
   return { ok: true, value };
 }
+
+/**
+ * Compute a link's new `previous_codes` after renaming `retired` → `claimed`:
+ * the retired back-half is kept (so it still redirects), the claimed one is
+ * dropped (it's now the primary, e.g. reclaiming an old alias), duplicates are
+ * removed, and the list is capped to the most-recent `max`.
+ */
+export function rollPreviousCodes(
+  previous: readonly string[],
+  retired: string,
+  claimed: string,
+  max: number,
+): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const code of [...previous, retired]) {
+    if (code === claimed || seen.has(code)) continue;
+    seen.add(code);
+    out.push(code);
+  }
+  return out.slice(Math.max(0, out.length - max)); // keep the most recent `max`
+}

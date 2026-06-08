@@ -19,8 +19,14 @@ export const links = pgTable(
   'links',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    // The short slug. 7-char base62 by default; custom slugs are Phase 2.
+    // The short slug. 7-char base62 by default; owners can set a custom back-half.
     code: text('code').notNull(),
+    // Back-halves this link used before (capped). They keep redirecting here, and
+    // analytics span them. GIN-indexed for the redirect alias lookup.
+    previousCodes: text('previous_codes')
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
     destinationUrl: text('destination_url').notNull(),
     // null for anonymous links.
     ownerId: uuid('owner_id').references(() => users.id, { onDelete: 'set null' }),
@@ -45,6 +51,8 @@ export const links = pgTable(
   },
   (t) => [
     uniqueIndex('links_code_key').on(t.code),
+    // Redirect alias lookup: resolve an old back-half via `previous_codes @> [code]`.
+    index('links_previous_codes_gin').using('gin', t.previousCodes),
     // owner dashboard: most-recent-first listing per owner.
     index('links_owner_created_idx').on(t.ownerId, t.createdAt.desc()),
     index('links_status_idx').on(t.status),

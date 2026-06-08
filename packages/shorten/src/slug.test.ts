@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { generateSlug, validateCustomSlug } from './slug';
+import { generateSlug, rollPreviousCodes, validateCustomSlug } from './slug';
 
 describe('generateSlug', () => {
   it('produces a 7-character base62 code', () => {
@@ -39,5 +39,32 @@ describe('validateCustomSlug', () => {
     ['dot', 'clip.al'],
   ])('rejects %s', (_label, slug) => {
     expect(validateCustomSlug(slug).ok).toBe(false);
+  });
+});
+
+describe('rollPreviousCodes', () => {
+  it('keeps the retired back-half', () => {
+    expect(rollPreviousCodes([], 'old1', 'new1', 5)).toEqual(['old1']);
+  });
+
+  it('drops the claimed code (reclaiming an old alias)', () => {
+    expect(rollPreviousCodes(['promo', 'sale'], 'current', 'promo', 5)).toEqual([
+      'sale',
+      'current',
+    ]);
+  });
+
+  it('dedupes (retired already present)', () => {
+    expect(rollPreviousCodes(['a', 'b'], 'a', 'x', 5)).toEqual(['a', 'b']);
+  });
+
+  it('caps to the most recent N', () => {
+    expect(rollPreviousCodes(['c1', 'c2', 'c3', 'c4', 'c5'], 'c6', 'x', 5)).toEqual([
+      'c2',
+      'c3',
+      'c4',
+      'c5',
+      'c6',
+    ]);
   });
 });
