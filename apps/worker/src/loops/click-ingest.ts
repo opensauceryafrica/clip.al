@@ -67,7 +67,9 @@ async function updateCounters(perLink: Map<string, { delta: number; maxTs: Date 
       .update(links)
       .set({
         clicksTotal: sql`${links.clicksTotal} + ${delta}`,
-        lastClickAt: sql`greatest(${links.lastClickAt}, ${maxTs})`,
+        // Pass the timestamp as an ISO string + explicit cast: a raw JS Date in a
+        // `sql` template has no column-type context, so the driver can't serialize it.
+        lastClickAt: sql`greatest(${links.lastClickAt}, ${maxTs.toISOString()}::timestamptz)`,
       })
       .where(eq(links.id, linkId))
       .catch((e: unknown) => console.error('[click-ingest] counter update failed', e));
