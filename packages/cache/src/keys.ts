@@ -26,14 +26,13 @@ export const keys = {
 
   /** Reserved slugs set (loaded at boot, §14.12). */
   reservedSlugs: 'set:reserved_slugs',
-  /** Blocked eTLD+1 domains set (rebuilt on blocklist change, §14.1). */
-  blockedDomains: 'set:blocked_domains',
   /**
-   * Brand/trademark terms hash: term → policy ('flag'|'reject'). A HASH (not a
-   * SET) because the check is substring-against-host with a per-term policy, not
-   * O(1) membership. Rebuilt from Postgres at boot and on admin mutation (§14.13).
+   * Unified blocklist (§14.1, §14.13), value → policy ('flag'|'reject'), split by
+   * match shape: `domains` = exact eTLD+1 lookup, `keywords` = substring-of-host.
+   * Rebuilt from Postgres at boot and on every admin mutation.
    */
-  brandTerms: 'brand:terms',
+  blocklistDomains: 'blocklist:domains',
+  blocklistKeywords: 'blocklist:keywords',
 
   /** Sliding-window rate-limit bucket. */
   rateLimit: (bucket: string, id: string) => `rl:${bucket}:${id}`,

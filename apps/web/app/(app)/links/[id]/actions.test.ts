@@ -13,15 +13,15 @@ vi.mock('@/lib/auth', () => ({
 vi.mock('next/cache', () => ({ revalidatePath: () => undefined }));
 vi.mock('next/navigation', () => ({ redirect: () => undefined }));
 
-// @clipal/cache is mocked so the (real) @clipal/safety brand check reads our
-// seeded term and isBlockedDomain is a no-op. 'paypal' policy 'flag'.
+// @clipal/cache is mocked so the (real) @clipal/safety checkBlocklist reads our
+// seeded keyword and the domain check is a no-op. 'paypal' keyword, policy 'flag'.
 vi.mock('@clipal/cache', () => ({
   keys: { hotLink: (c: string) => `link:hot:${c}` },
   redis: { del: () => Promise.resolve(1) },
-  isBlockedDomain: () => Promise.resolve(false),
-  loadBlockedDomains: () => Promise.resolve(),
-  loadBrandTerms: () => Promise.resolve(),
-  getBrandTerms: () => Promise.resolve([{ term: 'paypal', policy: 'flag' }]),
+  isReservedSlug: () => Promise.resolve(false),
+  blockedDomainPolicy: () => Promise.resolve(null),
+  getBlockKeywords: () =>
+    Promise.resolve([{ value: 'paypal', match: 'keyword', policy: 'flag' }]),
 }));
 
 vi.mock('@clipal/db', () => ({

@@ -30,3 +30,6 @@ export const reportReason = pgEnum('report_reason', [
 ]);
 
 export const brandTermPolicy = pgEnum('brand_term_policy', ['flag', 'reject']);
+
+/** How a blocklist entry matches a destination: exact eTLD+1, or substring of host. */
+export const blockMatch = pgEnum('block_match', ['domain', 'keyword']);

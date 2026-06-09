@@ -15,6 +15,13 @@
       "when": 1780954738071,
       "tag": "0001_wide_gorgon",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1780960612914,
+      "tag": "0002_mature_rockslide",
+      "breakpoints": true
     }
   ]
 }

@@ -7,7 +7,6 @@ import {
   LayoutDashboard,
   Link2,
   ScrollText,
-  ShieldAlert,
   Users,
   type LucideIcon,
 } from 'lucide-react';
@@ -26,7 +25,6 @@ const ITEMS: NavItem[] = [
   { href: '/admin/users', label: 'Users', icon: Users },
   { href: '/admin/reports', label: 'Reports', icon: Flag },
   { href: '/admin/blocklist', label: 'Blocklist', icon: Ban },
-  { href: '/admin/brand-terms', label: 'Brand terms', icon: ShieldAlert },
   { href: '/admin/audit', label: 'Audit log', icon: ScrollText },
 ];
 

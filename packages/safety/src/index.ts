@@ -7,8 +7,14 @@ export {
 } from './url';
 export { scanUrl, scanUrls, isGsbConfigured, type SafetyState, type ScanResult } from './gsb';
 export { registrableDomain } from './domain';
-export { checkBrandTerms, matchBrandTerm, type BrandMatch, type BrandTermPolicy } from './brand';
+export {
+  checkBlocklist,
+  matchKeyword,
+  type BlockDecision,
+  type KeywordMatch,
+  type BlockPolicy,
+} from './blocklist';
 
-// Domain blocklist + brand terms live in Redis (rebuilt from Postgres on change).
+// The unified blocklist lives in Redis (rebuilt from Postgres on change).
 // Re-exported here so callers reach all URL-safety primitives from one package.
-export { isBlockedDomain, loadBlockedDomains, loadBrandTerms, type BrandTerm } from '@clipal/cache';
+export { loadBlocklist, type BlockEntry, type BlockMatch } from '@clipal/cache';

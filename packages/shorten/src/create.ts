@@ -3,8 +3,7 @@ import { isReservedSlug } from '@clipal/cache';
 import { SLUG_MAX_RETRIES } from '@clipal/config/constants';
 import { db, links, recordAudit } from '@clipal/db';
 import {
-  checkBrandTerms,
-  isBlockedDomain,
+  checkBlocklist,
   scanUrl,
   validateDestination,
   type RejectReason,
@@ -30,7 +29,7 @@ export type CreateLinkResult =
     }
   | {
       ok: false;
-      reason: RejectReason | 'blocked_domain' | 'brand_blocked' | 'malicious' | 'collision';
+      reason: RejectReason | 'blocked' | 'malicious' | 'collision';
       message: string;
     };
 
@@ -51,22 +50,17 @@ export async function createLink(input: CreateLinkInput): Promise<CreateLinkResu
 
   const { url, host, etld1, sld } = syntax.value;
 
-  // O(1) Redis blocklist check (eTLD+1 granularity).
-  if (await isBlockedDomain(etld1)) {
-    return { ok: false, reason: 'blocked_domain', message: 'That domain is blocked on clip.al.' };
-  }
-
-  // Brand/trademark check against the Redis-cached terms (§14.13). 'reject'
-  // hard-blocks; 'flag' lets the link through but queues it for admin review.
-  const brand = await checkBrandTerms(host, sld);
-  if (brand.matched && brand.policy === 'reject') {
+  // Unified blocklist (§14.1, §14.13): exact eTLD+1 domains + substring keywords.
+  // 'reject' hard-blocks; 'flag' lets the link through but queues it for review.
+  const block = await checkBlocklist(host, etld1, sld);
+  if (block.action === 'reject') {
     return {
       ok: false,
-      reason: 'brand_blocked',
-      message: 'That destination impersonates a protected brand and can’t be shortened.',
+      reason: 'blocked',
+      message: 'That destination is blocked on clip.al.',
     };
   }
-  const brandFlag = brand.matched; // any remaining match is a soft 'flag'
+  const flaggedForReview = block.action === 'flag';
 
   // Google Safe Browsing. Hard-reject anything it flags.
   const scan = await scanUrl(url);
@@ -107,7 +101,7 @@ export async function createLink(input: CreateLinkInput): Promise<CreateLinkResu
     const row = inserted[0];
     if (!row) continue; // code collided — try a new one
 
-    if (brandFlag) {
+    if (flaggedForReview) {
       await recordAudit(db, {
         actorId: null, // system
         action: 'link.flagged_brand',
@@ -117,7 +111,7 @@ export async function createLink(input: CreateLinkInput): Promise<CreateLinkResu
           code: row.code,
           etld1,
           destination: url,
-          ...(brand.matched ? { term: brand.term } : {}),
+          ...(block.action === 'flag' ? { matched: block.value } : {}),
         },
       });
     }
@@ -126,7 +120,7 @@ export async function createLink(input: CreateLinkInput): Promise<CreateLinkResu
       ok: true,
       id: row.id,
       code: row.code,
-      flaggedForReview: brandFlag,
+      flaggedForReview,
       safetyState: scan.state,
     };
   }

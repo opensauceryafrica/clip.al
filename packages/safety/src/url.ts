@@ -37,8 +37,8 @@ function fail(reason: RejectReason, message: string): SyntaxResult {
  *  - reject IP literals / localhost / private / internal hosts (SSRF)
  *  - reject other known shorteners (no shortener-of-shortener loops)
  *
- * The blocklist, brand-term and Google Safe Browsing checks are async (they read
- * Redis / the network) — see `isDomainBlocked`, `checkBrandTerms` and `scanUrl`.
+ * The unified blocklist and Google Safe Browsing checks are async (they read
+ * Redis / the network) — see `checkBlocklist` and `scanUrl`.
  */
 export function validateDestination(raw: string): SyntaxResult {
   const trimmed = raw.trim();

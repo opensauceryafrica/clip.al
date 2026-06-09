@@ -30,58 +30,65 @@ export async function addReservedSlug(slug: string): Promise<void> {
   await redis.sadd(keys.reservedSlugs, slug.toLowerCase());
 }
 
-// ---- Blocked domains --------------------------------------------------------
+// ---- Blocklist (unified: domains + keywords) --------------------------------
 
-export function loadBlockedDomains(domains: readonly string[]): Promise<void> {
-  return rebuildSet(keys.blockedDomains, domains);
+export type BlockPolicy = 'flag' | 'reject';
+export type BlockMatch = 'domain' | 'keyword';
+
+export interface BlockEntry {
+  value: string;
+  match: BlockMatch;
+  policy: BlockPolicy;
 }
 
-export async function isBlockedDomain(domain: string): Promise<boolean> {
-  return (await redis.sismember(keys.blockedDomains, domain.toLowerCase())) === 1;
+function asPolicy(v: string | null | undefined): BlockPolicy | null {
+  return v === 'reject' ? 'reject' : v === 'flag' ? 'flag' : null;
 }
 
-export async function addBlockedDomain(domain: string): Promise<void> {
-  await redis.sadd(keys.blockedDomains, domain.toLowerCase());
-}
-
-export async function removeBlockedDomain(domain: string): Promise<void> {
-  await redis.srem(keys.blockedDomains, domain.toLowerCase());
-}
-
-// ---- Brand / trademark terms ------------------------------------------------
-
-export type BrandTermPolicy = 'flag' | 'reject';
-
-export interface BrandTerm {
-  term: string;
-  policy: BrandTermPolicy;
-}
-
-/** Rebuild the brand-terms hash from Postgres (boot + on admin mutation). */
-export async function loadBrandTerms(terms: readonly BrandTerm[]): Promise<void> {
-  const pipeline = redis.pipeline();
-  pipeline.del(keys.brandTerms);
-  if (terms.length > 0) {
-    const obj: Record<string, string> = {};
-    for (const { term, policy } of terms) obj[term.toLowerCase()] = policy;
-    pipeline.hset(keys.brandTerms, obj);
+/**
+ * Rebuild the blocklist from Postgres (boot + on admin mutation). Stored as two
+ * hashes — value→policy — for the two lookup shapes: exact eTLD+1 (domains) and
+ * substring-of-host (keywords).
+ */
+export async function loadBlocklist(entries: readonly BlockEntry[]): Promise<void> {
+  const domains: Record<string, string> = {};
+  const keywords: Record<string, string> = {};
+  for (const e of entries) {
+    (e.match === 'keyword' ? keywords : domains)[e.value.toLowerCase()] = e.policy;
   }
+  const pipeline = redis.pipeline();
+  pipeline.del(keys.blocklistDomains);
+  pipeline.del(keys.blocklistKeywords);
+  if (Object.keys(domains).length > 0) pipeline.hset(keys.blocklistDomains, domains);
+  if (Object.keys(keywords).length > 0) pipeline.hset(keys.blocklistKeywords, keywords);
   await pipeline.exec();
 }
 
-/** Read all cached brand terms. Used by the substring brand check on shorten. */
-export async function getBrandTerms(): Promise<BrandTerm[]> {
-  const raw = await redis.hgetall(keys.brandTerms);
-  return Object.entries(raw).map(([term, policy]) => ({
-    term,
-    policy: policy === 'reject' ? 'reject' : 'flag',
+/** Exact eTLD+1 lookup → its block policy, or null if the domain isn't listed. */
+export async function blockedDomainPolicy(domain: string): Promise<BlockPolicy | null> {
+  return asPolicy(await redis.hget(keys.blocklistDomains, domain.toLowerCase()));
+}
+
+/** All keyword entries, for the substring matcher on the shorten path. */
+export async function getBlockKeywords(): Promise<BlockEntry[]> {
+  const raw = await redis.hgetall(keys.blocklistKeywords);
+  return Object.entries(raw).map(([value, policy]) => ({
+    value,
+    match: 'keyword',
+    policy: asPolicy(policy) ?? 'flag',
   }));
 }
 
-export async function addBrandTerm(term: string, policy: BrandTermPolicy): Promise<void> {
-  await redis.hset(keys.brandTerms, term.toLowerCase(), policy);
+export async function addBlockEntry(
+  value: string,
+  match: BlockMatch,
+  policy: BlockPolicy,
+): Promise<void> {
+  const key = match === 'keyword' ? keys.blocklistKeywords : keys.blocklistDomains;
+  await redis.hset(key, value.toLowerCase(), policy);
 }
 
-export async function removeBrandTerm(term: string): Promise<void> {
-  await redis.hdel(keys.brandTerms, term.toLowerCase());
+export async function removeBlockEntry(value: string, match: BlockMatch): Promise<void> {
+  const key = match === 'keyword' ? keys.blocklistKeywords : keys.blocklistDomains;
+  await redis.hdel(key, value.toLowerCase());
 }

@@ -3,7 +3,7 @@
 import { isReservedSlug, keys, redis } from '@clipal/cache';
 import { CUSTOM_SLUG_HISTORY_MAX } from '@clipal/config/constants';
 import { and, db, eq, links, or, recordAudit, sql } from '@clipal/db';
-import { checkBrandTerms, isBlockedDomain, scanUrl, validateDestination } from '@clipal/safety';
+import { checkBlocklist, scanUrl, validateDestination } from '@clipal/safety';
 import { rollPreviousCodes, validateCustomSlug } from '@clipal/shorten';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
@@ -43,33 +43,29 @@ export async function editDestinationAction(
   // No-op if the normalized destination is unchanged — nothing to re-check.
   if (syntax.value.url === link.destinationUrl) return { ok: true };
 
-  if (await isBlockedDomain(syntax.value.etld1)) {
-    return { error: 'That domain is blocked on clip.al.' };
-  }
-
-  // Brand/trademark check — same semantics as createLink (§14.13), so editing a
-  // link to a lookalike can't bypass the brand-term system. 'reject' refuses the
-  // edit; 'flag' allows it but marks the link suspicious for admin review.
-  const brand = await checkBrandTerms(syntax.value.host, syntax.value.sld);
-  if (brand.matched && brand.policy === 'reject') {
+  // Unified blocklist check — same semantics as createLink, so editing a link to
+  // a blocked domain/keyword can't bypass it. 'reject' refuses the edit; 'flag'
+  // allows it but marks the link suspicious for admin review.
+  const block = await checkBlocklist(syntax.value.host, syntax.value.etld1, syntax.value.sld);
+  if (block.action === 'reject') {
     await recordAudit(db, {
       actorId: user.id,
-      action: 'link.brand_blocked',
+      action: 'link.blocked',
       targetType: 'link',
       targetId: linkId,
-      metadata: { code: link.code, term: brand.term, policy: 'reject', destination: syntax.value.url },
+      metadata: { code: link.code, matched: block.value, destination: syntax.value.url },
     });
-    return { error: 'That destination impersonates a protected brand and can’t be used.' };
+    return { error: 'That destination is blocked on clip.al.' };
   }
-  const brandFlag = brand.matched; // any remaining match is a soft 'flag'
+  const flaggedForReview = block.action === 'flag';
 
   const scan = await scanUrl(syntax.value.url);
   if (scan.state === 'malicious') {
     return { error: 'That destination was flagged as unsafe.' };
   }
 
-  // A brand flag forces 'suspicious' (queued for review); otherwise trust the scan.
-  const safetyState = brandFlag ? 'suspicious' : scan.state;
+  // A blocklist flag forces 'suspicious' (queued for review); else trust the scan.
+  const safetyState = flaggedForReview ? 'suspicious' : scan.state;
 
   await db
     .update(links)
@@ -81,7 +77,7 @@ export async function editDestinationAction(
     })
     .where(eq(links.id, linkId));
 
-  if (brandFlag) {
+  if (flaggedForReview) {
     await recordAudit(db, {
       actorId: user.id,
       action: 'link.flagged_brand',
@@ -90,7 +86,7 @@ export async function editDestinationAction(
       metadata: {
         code: link.code,
         destination: syntax.value.url,
-        ...(brand.matched ? { term: brand.term, policy: 'flag' } : {}),
+        ...(block.action === 'flag' ? { matched: block.value } : {}),
       },
     });
   }
