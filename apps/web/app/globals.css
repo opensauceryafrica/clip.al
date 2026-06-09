@@ -127,6 +127,20 @@
     outline-offset: 2px;
   }
 
+  /* Tailwind v4's Preflight drops the pointer cursor on <button>/<select>; restore
+   * it for interactive controls (disabled ones keep the default arrow). */
+  button:not(:disabled):not([aria-disabled='true']),
+  [role='button']:not([aria-disabled='true']),
+  [role='menuitem'],
+  [role='menuitemradio'],
+  [role='option'],
+  [role='tab'],
+  summary,
+  select:not(:disabled),
+  label[for] {
+    cursor: pointer;
+  }
+
   /* Thin, monochrome scrollbars that fit the dark surface. */
   * {
     scrollbar-width: thin;
