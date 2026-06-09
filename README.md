@@ -61,6 +61,11 @@ MinIO (S3)                         worker: ingest · re-scan · reapers · salt
 
 ---
 
+## Deploying to production
+
+See **[DEPLOY.md](DEPLOY.md)** for the full production guide (server prereqs, env,
+Caddy/TLS, migrations, the pre-launch checklist, and day-2 ops).
+
 ## Quickstart (full stack)
 
 ```bash
