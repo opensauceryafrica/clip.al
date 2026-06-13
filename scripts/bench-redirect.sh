@@ -28,8 +28,11 @@ curl -s -o /dev/null -w "  first response: %{http_code} in %{time_total}s\n" "${
 echo
 
 if command -v oha >/dev/null 2>&1; then
-  echo "→ oha (no redirect follow), c=${CONCURRENCY}, z=${DURATION}"
-  exec oha --no-tui --disable-keepalive=false --redirect 0 -z "${DURATION}" -c "${CONCURRENCY}" "${URL}"
+  # Keep-alive is ON by default (we do NOT pass --disable-keepalive). Note: oha
+  # resolves the host itself — point it at 127.0.0.1 (not localhost) when the
+  # server binds IPv4 only, or oha may hit ::1 and report 0 successful responses.
+  echo "→ oha (keep-alive on, no redirect follow), c=${CONCURRENCY}, z=${DURATION}"
+  exec oha --no-tui --redirect 0 -z "${DURATION}" -c "${CONCURRENCY}" "${URL}"
 elif command -v bombardier >/dev/null 2>&1; then
   echo "→ bombardier, c=${CONCURRENCY}, duration=${DURATION}"
   exec bombardier -c "${CONCURRENCY}" -d "${DURATION}" -l --no-print-connection-errors "${URL}"
