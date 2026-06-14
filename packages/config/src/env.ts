@@ -60,6 +60,32 @@ const schema = z
     // Google Safe Browsing
     GSB_API_KEY: z.string().default(''),
 
+    // Paystack billing (NGN). Features gate on PAYSTACK_SECRET_KEY presence,
+    // same optional-by-default pattern as GSB/Turnstile above.
+    PAYSTACK_SECRET_KEY: z.string().default(''),
+    PAYSTACK_PUBLIC_KEY: z.string().default(''),
+    PAYSTACK_WEBHOOK_SECRET: z.string().default(''),
+
+    // Polar.sh billing (USD). Features gate on POLAR_ACCESS_TOKEN presence.
+    POLAR_ACCESS_TOKEN: z.string().default(''),
+    POLAR_WEBHOOK_SECRET: z.string().default(''),
+    POLAR_ORG_ID: z.string().default(''),
+
+    // Google AdSense (interstitial slots). Ads render only when ADS_ENABLED is
+    // truthy AND an ADSENSE_CLIENT_ID is set; off by default (esp. in dev).
+    ADS_ENABLED: z
+      .string()
+      .optional()
+      .transform((v) => v === 'true' || v === '1'),
+    ADSENSE_CLIENT_ID: z.string().default(''),
+
+    // Custom domains (bring-your-own short domain).
+    // CNAME target users point their domain at.
+    DOMAINS_CNAME_TARGET: z.string().default('domains.clip.al'),
+    // Caddy on-demand-TLS check endpoint is restricted to this source IP (the
+    // Caddy container's Docker-network IP). Empty = no IP restriction (dev).
+    CADDY_CHECK_ALLOWED_IP: z.string().default(''),
+
     // Error tracking (optional)
     SENTRY_DSN: z.string().default(''),
 

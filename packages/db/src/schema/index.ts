@@ -2,10 +2,24 @@ export * from './enums';
 export * from './users';
 export * from './auth-codes';
 export * from './sessions';
+export * from './campaigns';
+export * from './custom-domains';
 export * from './links';
+export * from './link-destinations';
 export * from './link-reports';
 export * from './blocked-domains';
 export * from './reserved-slugs';
 export * from './audit-log';
 export * from './abbrefy-migrations';
 export * from './flagged-brand-terms';
+// Phase 2: billing
+export * from './subscriptions';
+export * from './invoices';
+export * from './billing-events';
+export * from './plan-prices';
+export * from './app-settings';
+// Phase 2: API, webhooks, ads
+export * from './api-keys';
+export * from './webhooks';
+export * from './webhook-deliveries';
+export * from './ads-placements';

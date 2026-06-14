@@ -92,6 +92,39 @@ export const BRAND_TERMS: readonly string[] = [
   'barclays', 'wellsfargo', 'roblox', 'discord', 'steamcommunity', 'coinbasepro',
 ];
 
+// ---- Default profanity terms (soft slug check — §8) ------------------------
+// Substring-matched (case-insensitive) against a user-chosen custom slug to
+// SOFT-reject obviously offensive back-halves. Deliberately small and
+// conservative — admin can extend/override via the `app_settings`
+// `profanity_wordlist` key (DB overrides this default).
+// TODO(@owner): refine this baseline wordlist with the moderation policy.
+export const DEFAULT_PROFANITY_TERMS: readonly string[] = [
+  'fuck', 'shit', 'cunt', 'bitch', 'bastard', 'asshole', 'dick', 'pussy',
+  'nigger', 'nigga', 'faggot', 'retard', 'whore', 'slut', 'rape', 'molest',
+  'pedo', 'paedo', 'kkk', 'nazi',
+];
+
+// ---- Default restricted countries (billing — §14.6) ------------------------
+// ISO-3166 alpha-2 codes for countries where subscription creation is blocked
+// because neither Paystack (NGN) nor Polar (USD) can be served there
+// (sanctioned / unsupported). Admin can extend/override via the `app_settings`
+// `restricted_countries` key (DB overrides this default).
+// TODO(@owner): reconcile with the current Paystack/Polar supported-country
+// lists and the prevailing sanctions program before launch.
+export const DEFAULT_RESTRICTED_COUNTRIES: readonly string[] = [
+  'CU', // Cuba
+  'IR', // Iran
+  'KP', // North Korea
+  'SY', // Syria
+  'RU', // Russia
+  'BY', // Belarus
+  'AF', // Afghanistan
+  'SD', // Sudan
+  'SS', // South Sudan
+  'VE', // Venezuela
+  'MM', // Myanmar
+];
+
 // ---- Device classes ---------------------------------------------------------
 export const DEVICE_CLASSES = ['mobile', 'tablet', 'desktop', 'bot', 'unknown'] as const;
 export type DeviceClass = (typeof DEVICE_CLASSES)[number];
