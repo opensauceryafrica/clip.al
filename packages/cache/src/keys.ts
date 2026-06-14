@@ -20,6 +20,8 @@ export const keys = {
   clickDlq: 'clicks:dlq',
   /** Per-day per-code rough counter (HINCRBY), flushed to Postgres by the worker. */
   clickCounter: (yyyymmdd: string) => `clicks:counter:${yyyymmdd}`,
+  /** Authoritative click-limit counter for capped links (§8); INCR-if-below via Lua. */
+  clickLimit: (code: string) => `clicks:limit:${code}`,
 
   /** Daily salt for IP hashing; rotates at UTC midnight, 48h TTL (§10). */
   dailySalt: (yyyymmdd: string) => `ip:salt:${yyyymmdd}`,

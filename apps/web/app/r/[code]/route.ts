@@ -1,33 +1,29 @@
-import { keys, redis } from '@clipal/cache';
+import { validateSession } from '@clipal/auth';
 import { CODE_REGEX } from '@clipal/config/constants';
+import { SESSION_COOKIE_NAME } from '@clipal/config/constants';
+import { lookupCountry } from '@clipal/geo';
 import { enqueueClick, type ClickEvent } from '@/lib/click-queue';
-import { goneDisabled, goneSafety, notFound, unavailable } from '@/lib/gone-pages';
-import { lookupLink } from '@/lib/hotpath';
+import { goneDisabled, notFound, unavailable } from '@/lib/gone-pages';
 import { recordLostClick } from '@/lib/metrics';
-import { getClientIp, getUserAgent } from '@/lib/request';
+import { abCookieName, getClientIp, getUserAgent, parseCookies } from '@/lib/request';
+import { pwCookieName, verifyPwCookie } from '@/lib/pw';
+import {
+  allowClick,
+  classifyDevice,
+  isExpired,
+  resolveCachedLink,
+  resolveDestination,
+} from '@/lib/resolve';
 
 /**
- * The redirect hot path (§9). The single most important route in the product.
- *
- * Rules it obeys:
- *  - Node runtime, NOT Edge (self-hosted). Excluded from global middleware.
- *  - Does as little as possible; never blocks on the DB for cached links.
- *  - Pure `Response` — no React, no heavy imports, no ORM (uses a dedicated raw
- *    pg pool + a shared Redis connection opened once at module load).
- *  - Even bots get redirected; analytics tagging/bot-drop happens in the worker.
+ * The redirect hot path (§9) — extended in Phase 2 with power-link gates that all
+ * run AFTER the single Redis lookup and BEFORE the 302, O(1) each (§ AC9):
+ * expiry, password proof, click-limit (one Lua round-trip, only when capped) and
+ * geo/device/A-B routing (in-memory). Still a pure Response — no React, no ORM.
  */
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-interface CachedLink {
-  url: string;
-  interstitial: boolean;
-  safety: string;
-  id: string;
-  owner: string | null;
-}
-
-/** Race a promise against a timeout so a slow/down backend can't stall /r. */
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   let timer: ReturnType<typeof setTimeout>;
   const timeout = new Promise<never>((_, reject) => {
@@ -36,20 +32,34 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   return Promise.race([promise.finally(() => clearTimeout(timer)), timeout]);
 }
 
-function cacheSet(key: string, value: string, ttlSec: number): void {
-  // Fire-and-forget; a cache write failure must never affect the response.
-  redis.set(key, value, 'EX', ttlSec).catch(() => {});
+function redirectTo(location: string, extraCookies?: string[]): Response {
+  const headers = new Headers({
+    Location: location,
+    'Cache-Control': 'private, no-store',
+    'Referrer-Policy': 'no-referrer',
+  });
+  for (const c of extraCookies ?? []) headers.append('Set-Cookie', c);
+  return new Response(null, { status: 302, headers });
 }
 
-function redirectTo(location: string): Response {
-  return new Response(null, {
-    status: 302,
-    headers: {
-      Location: location,
-      'Cache-Control': 'private, no-store',
-      'Referrer-Policy': 'no-referrer',
-    },
-  });
+/** Resolve the visitor country, honouring an admin-only `?_geo_override=XX`. */
+async function resolveCountry(request: Request, ip: string): Promise<string> {
+  const override = new URL(request.url).searchParams.get('_geo_override');
+  if (override) {
+    // Only honour the override for an authenticated admin/moderator (AC4 debug aid).
+    const token = parseCookies(request.headers).get(SESSION_COOKIE_NAME);
+    if (token) {
+      try {
+        const user = await withTimeout(validateSession(token), 200);
+        if (user && (user.role === 'admin' || user.role === 'moderator')) {
+          return override.toUpperCase().slice(0, 2);
+        }
+      } catch {
+        /* ignore — fall through to real geo */
+      }
+    }
+  }
+  return lookupCountry(ip);
 }
 
 export async function GET(
@@ -57,85 +67,73 @@ export async function GET(
   ctx: { params: Promise<{ code: string }> },
 ): Promise<Response> {
   const { code } = await ctx.params;
-
-  // 1. Validate shape before touching any backend.
   if (!CODE_REGEX.test(code)) return notFound();
 
-  const cacheKey = keys.hotLink(code);
-
-  // 2. Redis lookup (with a hard timeout — if Redis is slow/down we fall through
-  //    to Postgres rather than stalling the redirect, per §10's failure mode).
-  let cached: string | null = null;
+  let result;
   try {
-    cached = await withTimeout(redis.get(cacheKey), 300);
+    result = await withTimeout(resolveCachedLink(code), 600);
   } catch {
-    cached = null;
+    return unavailable();
   }
+  if (result.kind === 'not_found') return notFound();
+  if (result.kind === 'disabled') return goneDisabled();
 
-  let link: CachedLink | null = null;
-  if (cached === 'DISABLED') {
-    return goneDisabled();
-  } else if (cached) {
-    try {
-      link = JSON.parse(cached) as CachedLink;
-    } catch {
-      link = null; // corrupt cache entry — re-resolve from Postgres.
+  const link = result.link;
+  const now = Date.now();
+
+  // 1. Expiry / click-limit-by-time gates (from the cached payload — free).
+  if (isExpired(link, now)) return redirectTo(`/p/${code}/expired`);
+
+  // 2. Password gate: no valid proof cookie → send to the interstitial form.
+  if (link.hasPassword) {
+    const cookies = parseCookies(request.headers);
+    if (!verifyPwCookie(code, cookies.get(pwCookieName(code)), now)) {
+      return redirectTo(`/p/${code}`);
     }
   }
 
-  // 3. Cache miss → single indexed Postgres lookup.
-  if (!link) {
-    let row;
-    try {
-      row = await withTimeout(lookupLink(code), 300);
-    } catch {
-      return unavailable(); // Postgres unreachable and not cached — can't resolve.
-    }
-    if (!row) return notFound();
+  // 3. Interstitial owners: the /p page renders + enqueues the click (not here).
+  if (link.interstitial) return redirectTo(`/p/${code}`);
 
-    if (row.status !== 'active') {
-      cacheSet(cacheKey, 'DISABLED', 300);
-      return goneDisabled();
-    }
-    if (row.safety_state === 'suspicious' || row.safety_state === 'malicious') {
-      cacheSet(cacheKey, 'DISABLED', 300);
-      return goneSafety();
-    }
-
-    link = {
-      url: row.destination_url,
-      interstitial: row.interstitial_required,
-      safety: row.safety_state,
-      id: row.id,
-      owner: row.owner_id,
-    };
-    cacheSet(cacheKey, JSON.stringify(link), 3600);
+  // 4. Direct redirect. Click-limit (one Lua round-trip, only when capped).
+  if (link.maxClicks !== null) {
+    const allowed = await allowClick(code, link.maxClicks, link.clicksTotal).catch(() => true);
+    if (!allowed) return redirectTo(`/p/${code}/blocked`);
   }
 
-  // 4. Interstitial or direct?
-  if (link.interstitial) {
-    // /p will render the preview and enqueue the click — do NOT enqueue here.
-    // RELATIVE Location: the browser resolves it against the origin it requested,
-    // so this never leaks the request Host header (a container hostname in Docker).
-    return redirectTo(`/p/${code}`);
+  // 5. Resolve the destination (geo/device/A-B). Country/device are cheap.
+  const ip = getClientIp(request.headers);
+  const ua = getUserAgent(request.headers);
+  let abVariant: number | null = null;
+  if (link.routingMode === 'ab') {
+    const raw = parseCookies(request.headers).get(abCookieName(code));
+    const n = raw !== undefined ? Number(raw) : NaN;
+    abVariant = Number.isInteger(n) ? n : null;
   }
+  const country = link.routingMode === 'geo' ? await resolveCountry(request, ip) : 'ZZ';
+  const device = link.routingMode === 'device' ? classifyDevice(ua) : 'desktop';
+  const routed = resolveDestination(link, { country, device, abVariant }, Math.random());
 
-  // Direct: fire-and-forget click enqueue, then redirect.
+  // 6. Fire-and-forget click enqueue, then redirect.
   const url = new URL(request.url);
   const click: ClickEvent = {
     code,
     linkId: link.id,
     ownerId: link.owner,
-    ip: getClientIp(request.headers),
-    ua: getUserAgent(request.headers),
+    ip,
+    ua,
     referrer: request.headers.get('referer') ?? '',
     isInterstitial: 0,
     utmSource: url.searchParams.get('utm_source') ?? '',
     utmMedium: url.searchParams.get('utm_medium') ?? '',
     utmCampaign: url.searchParams.get('utm_campaign') ?? '',
-    ts: Date.now(),
+    ts: now,
   };
   enqueueClick(click).catch(() => recordLostClick());
 
-  return redirectTo(link.url);
+  const cookies =
+    routed.setAbVariant !== undefined
+      ? [`${abCookieName(code)}=${routed.setAbVariant}; Path=/; Max-Age=2592000; HttpOnly; SameSite=Lax`]
+      : undefined;
+  return redirectTo(routed.url, cookies);
 }

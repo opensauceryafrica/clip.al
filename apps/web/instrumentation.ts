@@ -18,6 +18,20 @@ export async function register(): Promise<void> {
       console.error('[boot] failed to load security sets', err);
     }
 
+    // Open the request-time GeoLite reader once so the redirect hot path's
+    // geo-routing lookups are synchronous (returns 'ZZ' gracefully if no mmdb).
+    try {
+      const { openCountryReader } = await import('@clipal/geo');
+      const reader = await openCountryReader();
+      console.log(
+        reader
+          ? '[boot] GeoLite country reader open — request-time geo-routing enabled'
+          : '[boot] no GeoLite mmdb in GEOIP_DIR — geo-routing falls back to ZZ',
+      );
+    } catch (err) {
+      console.error('[boot] failed to open GeoLite reader', err);
+    }
+
     const { isGsbConfigured } = await import('@clipal/safety');
     if (!isGsbConfigured()) {
       console.warn(
