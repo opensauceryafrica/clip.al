@@ -1,4 +1,4 @@
-import { can, resolvePlan } from '@clipal/billing';
+import { can, planLimits, resolvePlan } from '@clipal/billing';
 import { and, asc, db, eq, gt, or, schema } from '@clipal/db';
 import { createLink } from '@clipal/shorten';
 import { emitWebhook } from '@/lib/webhooks';
@@ -90,6 +90,7 @@ export async function POST(request: Request): Promise<Response> {
     creatorIp: getClientIp(request.headers),
     creatorUserAgent: getUserAgent(request.headers),
     ...(power ? { power } : {}),
+    interstitialRequired: planLimits(plan).interstitialOnOwnedLinks,
   });
 
   if (!result.ok) {

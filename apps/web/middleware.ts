@@ -18,14 +18,30 @@ const PROTECTED_PREFIXES = ['/dashboard', '/links', '/settings', '/admin'];
 function buildCsp(nonce: string): string {
   const isDev = process.env.NODE_ENV !== 'production';
   const cdn = process.env['S3_PUBLIC_URL'] ?? '';
+  // AdSense (§10) — only widen the policy when ads are actually enabled. The
+  // interstitial's ad scripts carry the per-request nonce. NOTE(@owner): when
+  // turning on AdSense, confirm the <ins>/push inline scripts are nonce-tagged.
+  const adsOn = /^(1|true|yes|on)$/i.test(process.env['ADS_ENABLED'] ?? '');
+  const adScript = adsOn
+    ? ' https://pagead2.googlesyndication.com https://*.googlesyndication.com https://adservice.google.com https://www.googletagservices.com https://partner.googleadservices.com'
+    : '';
+  const adFrame = adsOn
+    ? ' https://googleads.g.doubleclick.net https://tpc.googlesyndication.com https://www.google.com'
+    : '';
+  const adImg = adsOn
+    ? ' https://*.googlesyndication.com https://*.doubleclick.net https://www.google.com'
+    : '';
+  const adConnect = adsOn
+    ? ' https://pagead2.googlesyndication.com https://*.google.com https://*.doubleclick.net'
+    : '';
   const directives = [
     `default-src 'self'`,
-    `script-src 'self' https://challenges.cloudflare.com 'nonce-${nonce}'${isDev ? " 'unsafe-eval'" : ''}`,
+    `script-src 'self' https://challenges.cloudflare.com 'nonce-${nonce}'${adScript}${isDev ? " 'unsafe-eval'" : ''}`,
     `style-src 'self' 'unsafe-inline'`,
-    `img-src 'self' data: blob: ${cdn}`.trim(),
+    `img-src 'self' data: blob: ${cdn}${adImg}`.trim(),
     `font-src 'self'`,
-    `frame-src https://challenges.cloudflare.com`,
-    `connect-src 'self' https://challenges.cloudflare.com${isDev ? ' ws:' : ''}`,
+    `frame-src https://challenges.cloudflare.com${adFrame}`,
+    `connect-src 'self' https://challenges.cloudflare.com${adConnect}${isDev ? ' ws:' : ''}`,
     `base-uri 'self'`,
     `form-action 'self'`,
     `frame-ancestors 'none'`,

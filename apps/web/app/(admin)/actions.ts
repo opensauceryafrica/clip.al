@@ -13,6 +13,7 @@ import {
   type PlanName,
 } from '@clipal/config';
 import {
+  adsPlacements,
   and,
   blockedDomains,
   customDomains,
@@ -27,8 +28,11 @@ import {
 } from '@clipal/db';
 import { sendAccountSuspended } from '@clipal/email';
 import { registrableDomain } from '@clipal/safety';
+import { putObject } from '@clipal/s3';
+import { randomUUID } from 'node:crypto';
 import { headers } from 'next/headers';
 import { revalidatePath } from 'next/cache';
+import { z } from 'zod';
 import { requireAdmin } from '@/lib/auth';
 import { getClientIp, getUserAgent } from '@/lib/request';
 
@@ -471,4 +475,260 @@ export async function adminRemoveDomainAction(formData: FormData): Promise<void>
     ...(await auditContext()),
   });
   revalidatePath('/admin/domains');
+}
+
+// ---- Ad placements (§11) ----------------------------------------------------
+
+/**
+ * Shape returned by the create/update ad actions to a `useActionState` client
+ * form. `ok` flips on success (the form resets / closes); `error` carries a
+ * single human-readable message to render inline.
+ */
+export interface AdActionState {
+  ok?: boolean;
+  error?: string;
+}
+
+const AD_SLOTS = ['interstitial_top', 'interstitial_bottom', 'tree_top'] as const;
+
+// Accepted creative content-types → file extension for the MinIO key.
+const IMAGE_EXT: Record<string, string> = {
+  'image/png': 'png',
+  'image/jpeg': 'jpg',
+  'image/webp': 'webp',
+  'image/gif': 'gif',
+  'image/svg+xml': 'svg',
+};
+
+// Hard cap on creative size (2 MiB) — these are banners, not hero images.
+const MAX_CREATIVE_BYTES = 2 * 1024 * 1024;
+
+const adFieldsSchema = z.object({
+  slot: z.enum(AD_SLOTS),
+  advertiserName: z.string().trim().min(1, 'Advertiser name is required.').max(120),
+  // Only http/https click-throughs (no javascript:/data: etc.).
+  clickUrl: z
+    .string()
+    .trim()
+    .url('Enter a valid URL.')
+    .refine((u) => /^https?:\/\//i.test(u), 'Click URL must start with http:// or https://'),
+  weight: z.coerce.number().int().min(1, 'Weight must be ≥ 1.').max(1000).default(1),
+  active: z.boolean().default(true),
+  startsAt: z.date().nullable(),
+  endsAt: z.date().nullable(),
+});
+
+/** Parse an optional datetime-local field; '' / missing → null. */
+function parseOptionalDate(raw: FormDataEntryValue | null): Date | null {
+  const v = String(raw ?? '').trim();
+  if (!v) return null;
+  const d = new Date(v);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+/**
+ * Read the shared ad fields out of a FormData and validate them with zod.
+ * Returns either the parsed values or a single error message for the client
+ * form. `active` is derived from the checkbox presence ('on' when checked).
+ */
+function readAdFields(
+  formData: FormData,
+): { ok: true; values: z.infer<typeof adFieldsSchema> } | { ok: false; error: string } {
+  const parsed = adFieldsSchema.safeParse({
+    slot: String(formData.get('slot') ?? ''),
+    advertiserName: String(formData.get('advertiserName') ?? ''),
+    clickUrl: String(formData.get('clickUrl') ?? ''),
+    weight: String(formData.get('weight') ?? '1'),
+    active: formData.get('active') === 'on' || formData.get('active') === 'true',
+    startsAt: parseOptionalDate(formData.get('startsAt')),
+    endsAt: parseOptionalDate(formData.get('endsAt')),
+  });
+  if (!parsed.success) {
+    const first = parsed.error.issues[0];
+    return { ok: false, error: first?.message ?? 'Invalid input.' };
+  }
+  if (parsed.data.startsAt && parsed.data.endsAt && parsed.data.endsAt <= parsed.data.startsAt) {
+    return { ok: false, error: 'End time must be after the start time.' };
+  }
+  return { ok: true, values: parsed.data };
+}
+
+/**
+ * Upload an uploaded creative to MinIO under `ads/<rand>.<ext>` and return its
+ * object key (stored as `imageUrl`). Returns an error string if the file is
+ * missing/empty/oversized/unsupported. `required` lets update skip when no new
+ * file is chosen (keeping the existing creative).
+ */
+async function uploadCreative(
+  formData: FormData,
+  required: boolean,
+): Promise<{ ok: true; key: string | null } | { ok: false; error: string }> {
+  const file = formData.get('image');
+  if (!(file instanceof File) || file.size === 0) {
+    if (required) return { ok: false, error: 'Choose a creative image to upload.' };
+    return { ok: true, key: null };
+  }
+  if (file.size > MAX_CREATIVE_BYTES) {
+    return { ok: false, error: 'Creative must be 2 MB or smaller.' };
+  }
+  const ext = IMAGE_EXT[file.type];
+  if (!ext) {
+    return { ok: false, error: 'Unsupported image type. Use PNG, JPEG, WebP, GIF, or SVG.' };
+  }
+  const key = `ads/${randomUUID()}.${ext}`;
+  const bytes = Buffer.from(await file.arrayBuffer());
+  await putObject(key, bytes, file.type);
+  return { ok: true, key };
+}
+
+/**
+ * Create an ad placement (§11). requireAdmin + zod-validated fields + a creative
+ * upload to MinIO (key stored as `imageUrl`). recordAudit + revalidate.
+ * `useActionState` signature: `(prev, formData) => AdActionState`.
+ */
+export async function createAdPlacementAction(
+  _prev: AdActionState,
+  formData: FormData,
+): Promise<AdActionState> {
+  const admin = await requireAdmin();
+
+  const fields = readAdFields(formData);
+  if (!fields.ok) return { error: fields.error };
+
+  const creative = await uploadCreative(formData, true);
+  if (!creative.ok) return { error: creative.error };
+  // `required: true` guarantees a non-null key here.
+  const imageUrl = creative.key as string;
+
+  const { slot, advertiserName, clickUrl, weight, active, startsAt, endsAt } = fields.values;
+
+  const [row] = await db
+    .insert(adsPlacements)
+    .values({ slot, advertiserName, imageUrl, clickUrl, weight, active, startsAt, endsAt })
+    .returning({ id: adsPlacements.id });
+
+  await recordAudit(db, {
+    actorId: admin.id,
+    action: 'ad.create',
+    targetType: 'ad_placement',
+    targetId: row?.id ?? '',
+    metadata: { slot, advertiserName, weight, active },
+    ...(await auditContext()),
+  });
+  revalidatePath('/admin/ads');
+  return { ok: true };
+}
+
+/**
+ * Update an ad placement (§11). All shared fields are replaced; the creative is
+ * only swapped when a new file is uploaded (otherwise the existing `imageUrl`
+ * key is kept). requireAdmin + zod + recordAudit + revalidate.
+ */
+export async function updateAdPlacementAction(
+  _prev: AdActionState,
+  formData: FormData,
+): Promise<AdActionState> {
+  const admin = await requireAdmin();
+  const id = String(formData.get('id') ?? '');
+  if (!id) return { error: 'Missing placement id.' };
+
+  const [existing] = await db
+    .select({ id: adsPlacements.id })
+    .from(adsPlacements)
+    .where(eq(adsPlacements.id, id))
+    .limit(1);
+  if (!existing) return { error: 'Placement not found.' };
+
+  const fields = readAdFields(formData);
+  if (!fields.ok) return { error: fields.error };
+
+  const creative = await uploadCreative(formData, false);
+  if (!creative.ok) return { error: creative.error };
+
+  const { slot, advertiserName, clickUrl, weight, active, startsAt, endsAt } = fields.values;
+
+  await db
+    .update(adsPlacements)
+    .set({
+      slot,
+      advertiserName,
+      clickUrl,
+      weight,
+      active,
+      startsAt,
+      endsAt,
+      ...(creative.key ? { imageUrl: creative.key } : {}),
+    })
+    .where(eq(adsPlacements.id, id));
+
+  await recordAudit(db, {
+    actorId: admin.id,
+    action: 'ad.update',
+    targetType: 'ad_placement',
+    targetId: id,
+    metadata: { slot, advertiserName, weight, active, creativeReplaced: Boolean(creative.key) },
+    ...(await auditContext()),
+  });
+  revalidatePath('/admin/ads');
+  return { ok: true };
+}
+
+/**
+ * Activate / deactivate an ad placement (§11). `active` form field is the
+ * desired NEXT state ('true' | 'false'). requireAdmin + recordAudit + revalidate.
+ */
+export async function toggleAdPlacementAction(formData: FormData): Promise<void> {
+  const admin = await requireAdmin();
+  const id = String(formData.get('id') ?? '');
+  if (!id) return;
+  const active = String(formData.get('active') ?? '') === 'true';
+
+  const [row] = await db
+    .select({ advertiserName: adsPlacements.advertiserName })
+    .from(adsPlacements)
+    .where(eq(adsPlacements.id, id))
+    .limit(1);
+  if (!row) return;
+
+  await db.update(adsPlacements).set({ active }).where(eq(adsPlacements.id, id));
+
+  await recordAudit(db, {
+    actorId: admin.id,
+    action: active ? 'ad.activate' : 'ad.deactivate',
+    targetType: 'ad_placement',
+    targetId: id,
+    metadata: { advertiserName: row.advertiserName },
+    ...(await auditContext()),
+  });
+  revalidatePath('/admin/ads');
+}
+
+/**
+ * Delete an ad placement (§11). The creative object in MinIO is intentionally
+ * left in place (cheap, and avoids dangling-reference races); only the row is
+ * removed. requireAdmin + recordAudit + revalidate.
+ */
+export async function deleteAdPlacementAction(formData: FormData): Promise<void> {
+  const admin = await requireAdmin();
+  const id = String(formData.get('id') ?? '');
+  if (!id) return;
+
+  const [row] = await db
+    .select({ advertiserName: adsPlacements.advertiserName, slot: adsPlacements.slot })
+    .from(adsPlacements)
+    .where(eq(adsPlacements.id, id))
+    .limit(1);
+  if (!row) return;
+
+  await db.delete(adsPlacements).where(eq(adsPlacements.id, id));
+
+  await recordAudit(db, {
+    actorId: admin.id,
+    action: 'ad.delete',
+    targetType: 'ad_placement',
+    targetId: id,
+    metadata: { advertiserName: row.advertiserName, slot: row.slot },
+    ...(await auditContext()),
+  });
+  revalidatePath('/admin/ads');
 }

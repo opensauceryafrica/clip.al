@@ -3,6 +3,7 @@ import type { Metadata, Viewport } from 'next';
 import { env } from '@clipal/config';
 import { GeistMono } from 'geist/font/mono';
 import { GeistSans } from 'geist/font/sans';
+import { CookieConsent } from '@/components/cookie-consent';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -36,6 +37,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     <html lang="en" className={`dark ${GeistSans.variable} ${GeistMono.variable}`}>
       <body className="min-h-dvh bg-background font-sans text-foreground antialiased">
         {children}
+        <CookieConsent />
       </body>
     </html>
   );

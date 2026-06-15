@@ -6,6 +6,7 @@ import { getPublicBaseUrl, limits } from '@clipal/config';
 import { createLink } from '@clipal/shorten';
 import { headers } from 'next/headers';
 import type { ShortenState } from '@/lib/action-state';
+import { planLimits, resolvePlan } from '@clipal/billing';
 import { getSessionUser } from '@/lib/auth';
 import { addClaimableLink } from '@/lib/claim';
 import { getClientIp, getUserAgent } from '@/lib/request';
@@ -42,6 +43,9 @@ export async function shortenAction(
     ownerId: user?.id ?? null,
     creatorIp: ip,
     creatorUserAgent: ua,
+    // Authed Pro/Business owners skip the interstitial on their links (§10/AC8);
+    // anonymous links always get it.
+    interstitialRequired: user ? planLimits(await resolvePlan(user.id)).interstitialOnOwnedLinks : true,
   });
   if (!result.ok) return { ok: false, error: result.message };
 

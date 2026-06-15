@@ -9,7 +9,12 @@ import { InterstitialCountdown } from '@/components/interstitial-countdown';
 import { ReportDialog } from '@/components/report-dialog';
 import { pwCookieName, verifyPwCookie } from '@/lib/pw';
 import { parseCookies } from '@/lib/request';
+import { lookupCountry } from '@clipal/geo';
+import { AdSlot } from '@/components/ad-slot';
+import { shouldRenderAds } from '@/lib/ads';
+import { hasAdsConsent } from '@/lib/consent';
 import { resolveHostDomain } from '@/lib/domain-context';
+import { getClientIp, getUserAgent } from '@/lib/request';
 import { isExpired, resolveCachedLink } from '@/lib/resolve';
 import { PasswordForm } from './password-form';
 
@@ -62,6 +67,18 @@ export default async function InterstitialPage({
     /* keep the raw value */
   }
 
+  // Ad gate (§10/AC8): only free-tier owners' links reach the interstitial (paid
+  // owners skip it). Here we additionally suppress ads for bots, datacenter IPs,
+  // missing consent, or when ADS_ENABLED is off — fail-closed.
+  const adHdrs = await headers();
+  const adIp = getClientIp(adHdrs);
+  const adsAllowed = shouldRenderAds({
+    ua: getUserAgent(adHdrs),
+    ip: adIp,
+    headers: adHdrs,
+    hasConsent: hasAdsConsent(parseCookies(adHdrs), lookupCountry(adIp)),
+  });
+
   return (
     <div className="flex min-h-dvh flex-col items-center justify-center px-6 py-12">
       <div className="w-full max-w-md">
@@ -74,6 +91,8 @@ export default async function InterstitialPage({
           </Link>
           <span className="text-sm text-zinc-500">You’re being redirected</span>
         </div>
+
+        {adsAllowed ? <AdSlot slot="interstitial_top" consent className="mb-6" /> : null}
 
         <Card>
           <CardContent className="space-y-5 p-6">
@@ -97,12 +116,15 @@ export default async function InterstitialPage({
           </CardContent>
         </Card>
 
-        {/* Reserved 728×90 ad slot — Phase 2 fills this. Do not load AdSense yet. */}
-        <div
-          id="ad-slot"
-          aria-hidden
-          className="mx-auto mt-6 h-[90px] w-full max-w-[728px] rounded-md border border-dashed border-zinc-200 dark:border-zinc-800"
-        />
+        {adsAllowed ? (
+          <AdSlot slot="interstitial_bottom" consent className="mt-6" />
+        ) : (
+          <div
+            id="ad-slot"
+            aria-hidden
+            className="mx-auto mt-6 h-[90px] w-full max-w-[728px] rounded-md border border-dashed border-zinc-200 dark:border-zinc-800"
+          />
+        )}
 
         <p className="mt-6 text-center text-xs text-zinc-500">
           Why am I seeing this? clip.al checks destinations for safety. Premium users skip this

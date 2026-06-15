@@ -51,6 +51,9 @@ export interface CreateLinkInput {
   creatorUserAgent: string | null;
   /** Optional power-link config. Absent => a plain auto-slug single link. */
   power?: PowerLinkConfig;
+  /** Whether the link routes through the interstitial. Default true; Pro/Business
+   * owners pass false to skip it (and its ads) on their own links (§10/AC8). */
+  interstitialRequired?: boolean;
 }
 
 export type CreateLinkResult =
@@ -144,7 +147,7 @@ export async function createLink(input: CreateLinkInput): Promise<CreateLinkResu
           safetyState: scan.state,
           safetyThreats: scan.threats.length > 0 ? scan.threats : null,
           safetyCheckedAt: scan.state === 'unchecked' ? null : new Date(),
-          interstitialRequired: true, // Phase 1: always (paid skip is Phase 2)
+          interstitialRequired: input.interstitialRequired ?? true,
           customSlug,
           ...powerValues,
         })

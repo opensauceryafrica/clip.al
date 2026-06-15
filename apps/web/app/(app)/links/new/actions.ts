@@ -190,6 +190,8 @@ export async function createPowerLinkAction(
     creatorIp: getClientIp(h),
     creatorUserAgent: getUserAgent(h),
     power,
+    // Pro/Business owners' links skip the interstitial (and its ads) — §10/AC8.
+    interstitialRequired: planLimits(plan).interstitialOnOwnedLinks,
   });
 
   if (!result.ok) {
