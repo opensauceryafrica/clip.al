@@ -68,4 +68,16 @@ export const keys = {
    * when a run runs long (SET NX PX).
    */
   webhookThresholdLock: 'webhook:threshold:lock',
+
+  /**
+   * Single-flight lock for the domain-verifier worker pass (§6/§12). One worker
+   * resolves TXT/CNAME and advances pending_dns → pending_tls at a time
+   * (SET NX PX). Existence = a verification pass is running.
+   */
+  domainVerifyLock: 'domain:verify:lock',
+  /**
+   * Single-flight lock for the daily domain TLS-health pass (§6/§12). Probes
+   * certs of active domains and flags failing/expiring ones (SET NX PX).
+   */
+  domainTlsHealthLock: 'domain:tls:lock',
 } as const;

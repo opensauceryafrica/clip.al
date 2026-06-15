@@ -55,22 +55,45 @@ const LINK_COLS = `
  * TODO(phase2-ws4): when custom domains land, scope the exact lookup by
  * `domain_id` (codes are unique PER DOMAIN — see the links_domain_code_key index).
  */
-export async function lookupLink(code: string): Promise<LinkRow | null> {
+export async function lookupLink(
+  code: string,
+  domainId: string | null = null,
+): Promise<LinkRow | null> {
+  // Default domain (domainId null) keeps the original `WHERE code = $1` query
+  // BYTE-FOR-BYTE so the verified hot path is untouched; a custom-domain host
+  // scopes by domain_id so codes are unique PER DOMAIN (links_domain_code_key).
+  if (domainId === null) {
+    const exact = await hotPg<LinkRow[]>`
+      SELECT ${hotPg.unsafe(LINK_COLS)} FROM links WHERE code = ${code} LIMIT 1
+    `;
+    if (exact[0]) return exact[0];
+    const alias = await hotPg<LinkRow[]>`
+      SELECT ${hotPg.unsafe(LINK_COLS)} FROM links WHERE previous_codes @> ${[code]} LIMIT 1
+    `;
+    return alias[0] ?? null;
+  }
+
   const exact = await hotPg<LinkRow[]>`
-    SELECT ${hotPg.unsafe(LINK_COLS)}
-    FROM links
-    WHERE code = ${code}
-    LIMIT 1
+    SELECT ${hotPg.unsafe(LINK_COLS)} FROM links
+    WHERE code = ${code} AND domain_id = ${domainId} LIMIT 1
   `;
   if (exact[0]) return exact[0];
-
   const alias = await hotPg<LinkRow[]>`
-    SELECT ${hotPg.unsafe(LINK_COLS)}
-    FROM links
-    WHERE previous_codes @> ${[code]}
-    LIMIT 1
+    SELECT ${hotPg.unsafe(LINK_COLS)} FROM links
+    WHERE previous_codes @> ${[code]} AND domain_id = ${domainId} LIMIT 1
   `;
   return alias[0] ?? null;
+}
+
+/**
+ * Resolve a custom-domain host to its (active) custom_domains id, via the lean
+ * raw pool (keeps the ORM out of the hot path). Returns null for unknown/inactive.
+ */
+export async function lookupActiveDomainId(host: string): Promise<string | null> {
+  const rows = await hotPg<{ id: string }[]>`
+    SELECT id FROM custom_domains WHERE domain = ${host} AND status = 'active' LIMIT 1
+  `;
+  return rows[0]?.id ?? null;
 }
 
 export interface DestinationRow {

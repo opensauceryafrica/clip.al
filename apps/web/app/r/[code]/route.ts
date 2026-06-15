@@ -2,6 +2,7 @@ import { validateSession } from '@clipal/auth';
 import { CODE_REGEX } from '@clipal/config/constants';
 import { SESSION_COOKIE_NAME } from '@clipal/config/constants';
 import { lookupCountry } from '@clipal/geo';
+import { resolveHostDomain } from '@/lib/domain-context';
 import { enqueueClick, type ClickEvent } from '@/lib/click-queue';
 import { goneDisabled, notFound, unavailable } from '@/lib/gone-pages';
 import { recordLostClick } from '@/lib/metrics';
@@ -69,9 +70,12 @@ export async function GET(
   const { code } = await ctx.params;
   if (!CODE_REGEX.test(code)) return notFound();
 
+  // Namespace by Host (§6). Default host → null (no I/O); custom domain → its id.
+  const domainId = await resolveHostDomain(request.headers.get('host'));
+
   let result;
   try {
-    result = await withTimeout(resolveCachedLink(code), 600);
+    result = await withTimeout(resolveCachedLink(code, domainId), 600);
   } catch {
     return unavailable();
   }

@@ -15,6 +15,7 @@ import {
 import {
   and,
   blockedDomains,
+  customDomains,
   db,
   eq,
   linkReports,
@@ -401,4 +402,73 @@ export async function adminUpsertPlanPriceAction(formData: FormData): Promise<vo
   });
   revalidatePath('/admin/pricing');
   revalidatePath('/pricing');
+}
+
+// ---- Custom domains ---------------------------------------------------------
+
+/**
+ * Force a re-check of a custom domain (admin). Clears `lastCheckAt` so the
+ * worker re-evaluates it on its next sweep. recordAudit.
+ */
+export async function adminRecheckDomainAction(formData: FormData): Promise<void> {
+  const admin = await requireAdmin();
+  const domainId = String(formData.get('domainId') ?? '');
+  if (!domainId) return;
+
+  const [row] = await db
+    .select({ domain: customDomains.domain })
+    .from(customDomains)
+    .where(eq(customDomains.id, domainId))
+    .limit(1);
+  if (!row) return;
+
+  await db
+    .update(customDomains)
+    .set({ lastCheckAt: null })
+    .where(eq(customDomains.id, domainId));
+
+  await recordAudit(db, {
+    actorId: admin.id,
+    action: 'domain.recheck',
+    targetType: 'custom_domain',
+    targetId: domainId,
+    metadata: { domain: row.domain },
+    ...(await auditContext()),
+  });
+  revalidatePath('/admin/domains');
+}
+
+/**
+ * Remove a custom domain (admin). Disables every link scoped to it
+ * (`disabled_by_user`) before deleting the row (FK is SET NULL on delete, so the
+ * status flip must happen while domain_id still points at the row). recordAudit.
+ */
+export async function adminRemoveDomainAction(formData: FormData): Promise<void> {
+  const admin = await requireAdmin();
+  const domainId = String(formData.get('domainId') ?? '');
+  if (!domainId) return;
+
+  const [row] = await db
+    .select({ domain: customDomains.domain, userId: customDomains.userId })
+    .from(customDomains)
+    .where(eq(customDomains.id, domainId))
+    .limit(1);
+  if (!row) return;
+
+  await db
+    .update(links)
+    .set({ status: 'disabled_by_user' })
+    .where(eq(links.domainId, domainId));
+
+  await db.delete(customDomains).where(eq(customDomains.id, domainId));
+
+  await recordAudit(db, {
+    actorId: admin.id,
+    action: 'domain.remove',
+    targetType: 'custom_domain',
+    targetId: domainId,
+    metadata: { domain: row.domain, userId: row.userId },
+    ...(await auditContext()),
+  });
+  revalidatePath('/admin/domains');
 }

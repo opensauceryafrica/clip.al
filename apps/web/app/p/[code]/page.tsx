@@ -9,6 +9,7 @@ import { InterstitialCountdown } from '@/components/interstitial-countdown';
 import { ReportDialog } from '@/components/report-dialog';
 import { pwCookieName, verifyPwCookie } from '@/lib/pw';
 import { parseCookies } from '@/lib/request';
+import { resolveHostDomain } from '@/lib/domain-context';
 import { isExpired, resolveCachedLink } from '@/lib/resolve';
 import { PasswordForm } from './password-form';
 
@@ -30,7 +31,8 @@ export default async function InterstitialPage({
   const { code } = await params;
   if (!CODE_REGEX.test(code)) notFound();
 
-  const result = await resolveCachedLink(code);
+  const domainId = await resolveHostDomain((await headers()).get('host'));
+  const result = await resolveCachedLink(code, domainId);
   if (result.kind !== 'ok') notFound();
   const link = result.link;
 

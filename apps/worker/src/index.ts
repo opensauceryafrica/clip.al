@@ -5,6 +5,8 @@ import { getDailySalt } from './lib/salt';
 import { runClickIngest } from './loops/click-ingest';
 import { runBulkImport } from './loops/bulk-import';
 import { runBillingProcessor } from './loops/billing-processor';
+import { runDomainVerifier } from './loops/domain-verifier';
+import { runDomainTlsHealth } from './loops/domain-tls-health';
 import { env } from '@clipal/config';
 import { refreshGeo } from './loops/geo-refresh';
 import { purgeDeletedAccounts } from './loops/purge';
@@ -42,6 +44,8 @@ async function main(): Promise<void> {
   every('account-purge', 24 * 60 * MINUTE, purgeDeletedAccounts); // §18.x daily hard-delete
   every('webhook-deliver', 10_000, runWebhookDeliver); // §5/§9 outbound webhook delivery + retries
   every('threshold-detector', MINUTE, runThresholdDetector); // §5/§9 link.threshold milestone emits
+  every('domain-verifier', MINUTE, runDomainVerifier); // §6/§12 custom-domain DNS (TXT) verification
+  every('domain-tls-health', 24 * 60 * MINUTE, runDomainTlsHealth); // §6/§12 daily active-domain TLS probe
 
   // §18.3 GeoLite2 refresh — only when a license key is configured. Runs at boot
   // (downloads if missing/stale) and weekly thereafter. No-op + one boot line

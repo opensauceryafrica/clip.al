@@ -105,8 +105,17 @@ export type ResolveResult =
  * so extending an expiry takes effect on the next cache refresh without a stale
  * DISABLED entry pinning the link off.
  */
-export async function resolveCachedLink(code: string): Promise<ResolveResult> {
-  const key = keys.hotLink(code);
+/** Hot-cache key — default domain keeps the original `link:hot:{code}` key
+ * (so existing admin/edit invalidation is unaffected); a custom domain scopes it. */
+export function hotKey(code: string, domainId: string | null): string {
+  return domainId === null ? keys.hotLink(code) : `link:hot:dom:${domainId}:${code}`;
+}
+
+export async function resolveCachedLink(
+  code: string,
+  domainId: string | null = null,
+): Promise<ResolveResult> {
+  const key = hotKey(code, domainId);
   let cached: string | null = null;
   try {
     cached = await redis.get(key);
@@ -123,7 +132,7 @@ export async function resolveCachedLink(code: string): Promise<ResolveResult> {
     }
   }
 
-  const row = await lookupLink(code);
+  const row = await lookupLink(code, domainId);
   if (!row) return { kind: 'not_found' };
   if (row.status !== 'active') {
     cacheSet(key, 'DISABLED', DISABLED_TTL);

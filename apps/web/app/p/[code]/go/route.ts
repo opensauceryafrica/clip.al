@@ -3,6 +3,7 @@ import { CODE_REGEX, SESSION_COOKIE_NAME } from '@clipal/config/constants';
 import { lookupCountry } from '@clipal/geo';
 import { enqueueClick, type ClickEvent } from '@/lib/click-queue';
 import { recordLostClick } from '@/lib/metrics';
+import { resolveHostDomain } from '@/lib/domain-context';
 import { pwCookieName, verifyPwCookie } from '@/lib/pw';
 import { abCookieName, getClientIp, getUserAgent, parseCookies } from '@/lib/request';
 import {
@@ -69,9 +70,10 @@ export async function GET(
   const { code } = await ctx.params;
   if (!CODE_REGEX.test(code)) return new Response('Not found', { status: 404 });
 
+  const domainId = await resolveHostDomain(request.headers.get('host'));
   let result;
   try {
-    result = await withTimeout(resolveCachedLink(code), 600);
+    result = await withTimeout(resolveCachedLink(code, domainId), 600);
   } catch {
     return new Response('Service unavailable', { status: 503 });
   }

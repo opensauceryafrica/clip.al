@@ -8,6 +8,17 @@
 	email admin@clip.al
 	# For local/staging testing without burning Let's Encrypt rate limits:
 	# acme_ca https://acme-staging-v02.api.letsencrypt.org/directory
+
+	# On-demand TLS for customer-owned custom domains (§6 step 6 / §14.3).
+	# Before issuing a cert for an arbitrary SNI host, Caddy asks the app whether
+	# that host is a known, DNS-verified custom domain. The endpoint returns 200
+	# (issue) only for domains in status pending_tls/active, else 404 (refuse) —
+	# this is what stops an attacker from making us mint certs for hosts we don't
+	# serve and burning ACME rate limits. `web:3000` is reachable on the internal
+	# compose network; that endpoint additionally IP-restricts to this network.
+	on_demand_tls {
+		ask http://web:3000/internal/caddy/check
+	}
 }
 
 # Reusable snippet: static, uniform security headers.
@@ -50,5 +61,33 @@ clip.al, *.clip.al {
 		format console
 		# Do not log full URLs of /r and /p (they contain user link codes); the
 		# app handles click analytics. Keep Caddy access logs lean.
+	}
+}
+
+# Customer-owned custom domains (e.g. go.brand.com) — §6 step 6.
+# This catch-all :443 site matches ANY host that the explicit `clip.al,
+# *.clip.al` site above did NOT (Caddy prefers the most specific matching site,
+# so the apex + wildcard keep their own block and their own DNS-01 certs). For
+# every other host we issue a cert ON DEMAND, gated by the `ask` endpoint in the
+# global block — a cert is only minted for a verified custom domain. The app
+# resolves which user/domain to serve from the request Host header.
+:443 {
+	tls {
+		on_demand
+	}
+
+	encode zstd gzip
+	import security_headers
+
+	# Same real-client-IP forwarding as the primary site (hot path + rate limits).
+	reverse_proxy web:3000 {
+		header_up X-Real-IP {remote_host}
+		header_up X-Forwarded-For {remote_host}
+		header_up X-Forwarded-Proto {scheme}
+	}
+
+	log {
+		output stdout
+		format console
 	}
 }
