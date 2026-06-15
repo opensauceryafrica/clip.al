@@ -10,6 +10,8 @@ import { refreshGeo } from './loops/geo-refresh';
 import { purgeDeletedAccounts } from './loops/purge';
 import { reapAuthCodes, reapSessions } from './loops/reapers';
 import { runRescan } from './loops/rescan';
+import { runThresholdDetector } from './loops/threshold-detector';
+import { runWebhookDeliver } from './loops/webhook-deliver';
 import { every } from './scheduler';
 
 const MINUTE = 60_000;
@@ -38,6 +40,8 @@ async function main(): Promise<void> {
   every('billing-processor', 15_000, runBillingProcessor); // §7 webhook drain safety net
   every('reap-sessions', 24 * 60 * MINUTE, reapSessions); // §18.6
   every('account-purge', 24 * 60 * MINUTE, purgeDeletedAccounts); // §18.x daily hard-delete
+  every('webhook-deliver', 10_000, runWebhookDeliver); // §5/§9 outbound webhook delivery + retries
+  every('threshold-detector', MINUTE, runThresholdDetector); // §5/§9 link.threshold milestone emits
 
   // §18.3 GeoLite2 refresh — only when a license key is configured. Runs at boot
   // (downloads if missing/stale) and weekly thereafter. No-op + one boot line

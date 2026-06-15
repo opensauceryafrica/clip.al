@@ -5,6 +5,7 @@ import { captureException } from '@clipal/observability';
 import { geoLookup } from '../lib/geo';
 import { getDailySalt, hashIp, utcDateKey } from '../lib/salt';
 import { parseUa } from '../lib/ua';
+import { enqueueClickedWebhooks, type ClickedEvent } from '../lib/webhook-emit';
 import { workerState } from '../health';
 
 /**
@@ -81,6 +82,7 @@ async function processEntries(entries: StreamEntry[]): Promise<void> {
   const ids: string[] = [];
   const saltCache = new Map<string, string>();
   const perLink = new Map<string, { delta: number; maxTs: Date }>();
+  const clicked: ClickedEvent[] = [];
 
   for (const [id, fieldArr] of entries) {
     try {
@@ -128,6 +130,22 @@ async function processEntries(entries: StreamEntry[]): Promise<void> {
         cur.delta += 1;
         if (tsDate > cur.maxTs) cur.maxTs = tsDate;
         perLink.set(linkId, cur);
+
+        // link.clicked webhook (§5/AC6) — only for owned, non-bot clicks.
+        const ownerId = f['owner_id'];
+        if (ownerId) {
+          clicked.push({
+            ownerId,
+            data: {
+              code,
+              country: geo.country,
+              device: ua.device,
+              referrer: referrerHost(f['referrer'] ?? ''),
+              isInterstitial: f['is_interstitial'] === '1',
+              ts: tsDate.toISOString(),
+            },
+          });
+        }
       }
     } catch (err) {
       // Malformed message: DLQ + ack so it can't block the stream head.
@@ -162,6 +180,7 @@ async function processEntries(entries: StreamEntry[]): Promise<void> {
   await redis.xack(STREAM, GROUP, ...ids);
   for (const id of ids) attempts.delete(id);
   await updateCounters(perLink);
+  await enqueueClickedWebhooks(clicked);
 
   workerState.processedClicks += rows.length;
   workerState.lastClickBatchAt = Date.now();

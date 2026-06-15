@@ -148,7 +148,11 @@ export async function createLink(input: CreateLinkInput): Promise<CreateLinkResu
           customSlug,
           ...powerValues,
         })
-        .onConflictDoNothing({ target: links.code })
+        // No explicit target: the code uniqueness constraint is now the per-domain
+        // functional index `links_domain_code_key` (coalesce(domain_id,zero), code),
+        // which a column-target ON CONFLICT can't name. A bare DO NOTHING catches
+        // that conflict; an empty result row drives the retry / slug_taken path.
+        .onConflictDoNothing()
         .returning({ id: links.id, code: links.code });
 
       const row = inserted[0];

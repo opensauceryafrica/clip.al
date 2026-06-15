@@ -2,12 +2,14 @@
 
 import { cn } from '@clipal/ui';
 import {
+  KeyRound,
   LayoutDashboard,
   Link2,
   Megaphone,
   Settings,
   Shield,
   Upload,
+  Webhook,
   type LucideIcon,
 } from 'lucide-react';
 import Link from 'next/link';
@@ -24,6 +26,8 @@ const BASE_ITEMS: NavItem[] = [
   { href: '/links', label: 'Links', icon: Link2 },
   { href: '/campaigns', label: 'Campaigns', icon: Megaphone },
   { href: '/links/bulk', label: 'Bulk import', icon: Upload },
+  { href: '/api-keys', label: 'API keys', icon: KeyRound },
+  { href: '/webhooks', label: 'Webhooks', icon: Webhook },
   { href: '/settings', label: 'Settings', icon: Settings },
 ];
 

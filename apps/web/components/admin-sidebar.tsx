@@ -5,6 +5,7 @@ import {
   Ban,
   CreditCard,
   Flag,
+  KeyRound,
   LayoutDashboard,
   Link2,
   Receipt,
@@ -30,6 +31,7 @@ const ITEMS: NavItem[] = [
   { href: '/admin/subscriptions', label: 'Subscriptions', icon: CreditCard },
   { href: '/admin/invoices', label: 'Invoices', icon: Receipt },
   { href: '/admin/pricing', label: 'Pricing', icon: Tag },
+  { href: '/admin/api-keys', label: 'API keys', icon: KeyRound },
   { href: '/admin/blocklist', label: 'Blocklist', icon: Ban },
   { href: '/admin/audit', label: 'Audit log', icon: ScrollText },
 ];

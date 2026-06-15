@@ -51,4 +51,21 @@ export const keys = {
   rateLimit: (bucket: string, id: string) => `rl:${bucket}:${id}`,
   /** Verify-attempt lock counter per email (§8 hardening). */
   verifyAttempts: (email: string) => `auth:verify:${email}`,
+
+  /**
+   * Short lock held by the webhook-deliver loop so a single worker drains the
+   * due deliveries at a time (SET NX PX). Existence = a delivery pass is running.
+   */
+  webhookDeliverLock: 'webhook:deliver:lock',
+  /**
+   * Per-link hash of the highest click threshold already emitted (field = linkId,
+   * value = the threshold number). Lets the threshold-detector emit each of
+   * 100/1k/10k/100k exactly once per link without a schema column (§5/§9).
+   */
+  webhookThresholdSeen: 'webhook:threshold:seen',
+  /**
+   * Lock for the threshold-detector pass, so overlapping scans don't double-emit
+   * when a run runs long (SET NX PX).
+   */
+  webhookThresholdLock: 'webhook:threshold:lock',
 } as const;
