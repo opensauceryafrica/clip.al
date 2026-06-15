@@ -6,8 +6,17 @@ import {
   linkTopReferrers,
   type DailyClicks,
 } from '@clipal/ch';
+import { can, resolvePlan } from '@clipal/billing';
 import { getPublicBaseUrl } from '@clipal/config';
-import { and, db, eq, links } from '@clipal/db';
+import {
+  and,
+  asc,
+  campaigns,
+  db,
+  eq,
+  linkDestinations,
+  links,
+} from '@clipal/db';
 import {
   Card,
   CardContent,
@@ -29,6 +38,14 @@ import { BarChart, type BarPoint } from '@/components/bar-chart';
 import { EditDestinationForm } from '@/components/edit-destination-form';
 import { EditSlugForm } from '@/components/edit-slug-form';
 import { LinkDetailActions } from '@/components/link-detail-actions';
+import {
+  LinkBuilderCampaignEditor,
+  LinkBuilderExpiryEditor,
+  LinkBuilderMaxClicksEditor,
+  LinkBuilderPasswordEditor,
+  LinkBuilderRoutingEditor,
+} from '@/components/link-builder-power-editors';
+import type { InitialRule, RulesMode } from '@/components/link-builder-rules-editor';
 import { LinkStatusBadge, SafetyBadge } from '@/components/link-status-badge';
 import { PageHeader } from '@/components/page-header';
 import { RankedList } from '@/components/ranked-list';
@@ -82,6 +99,33 @@ export default async function LinkDetailPage({ params }: { params: Promise<{ id:
   ]);
 
   const shortUrl = `${getPublicBaseUrl()}/${link.code}`;
+
+  // Power-field editor data: current routing rows, plan capabilities, campaigns.
+  const [plan, destinationRows, campaignRows] = await Promise.all([
+    resolvePlan(user.id),
+    db
+      .select({ match: linkDestinations.match, destinationUrl: linkDestinations.destinationUrl })
+      .from(linkDestinations)
+      .where(eq(linkDestinations.linkId, link.id))
+      .orderBy(asc(linkDestinations.order)),
+    db
+      .select({ id: campaigns.id, name: campaigns.name })
+      .from(campaigns)
+      .where(eq(campaigns.userId, user.id))
+      .orderBy(asc(campaigns.name))
+      .limit(100),
+  ]);
+
+  const routingRules: InitialRule[] = destinationRows.map((r) => ({
+    url: r.destinationUrl,
+    match: r.match,
+  }));
+  const routingCaps = {
+    geoRouting: can(plan, 'geoRouting'),
+    deviceRouting: can(plan, 'deviceRouting'),
+    abTesting: can(plan, 'abTesting'),
+  };
+  const expiresAtIso = link.expiresAt ? link.expiresAt.toISOString() : null;
 
   return (
     <div>
@@ -141,6 +185,59 @@ export default async function LinkDetailPage({ params }: { params: Promise<{ id:
           </CardContent>
         </Card>
       </div>
+
+      <Card className="mt-6">
+        <CardHeader>
+          <CardTitle>Controls</CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-6 md:grid-cols-2">
+          <div className="space-y-2">
+            <p className="text-xs font-medium text-muted-foreground">Password</p>
+            <LinkBuilderPasswordEditor
+              linkId={link.id}
+              hasPassword={Boolean(link.passwordHash)}
+              allowed={can(plan, 'password')}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <p className="text-xs font-medium text-muted-foreground">Expiry</p>
+            <LinkBuilderExpiryEditor
+              linkId={link.id}
+              expiresAt={expiresAtIso}
+              allowed={can(plan, 'expiry')}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <p className="text-xs font-medium text-muted-foreground">Click limit</p>
+            <LinkBuilderMaxClicksEditor
+              linkId={link.id}
+              maxClicks={link.maxClicks}
+              allowed={can(plan, 'expiry')}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <p className="text-xs font-medium text-muted-foreground">Campaign</p>
+            <LinkBuilderCampaignEditor
+              linkId={link.id}
+              campaignId={link.campaignId}
+              campaigns={campaignRows}
+            />
+          </div>
+
+          <div className="space-y-2 md:col-span-2">
+            <p className="text-xs font-medium text-muted-foreground">Routing</p>
+            <LinkBuilderRoutingEditor
+              linkId={link.id}
+              routingMode={link.routingMode as RulesMode}
+              rules={routingRules}
+              caps={routingCaps}
+            />
+          </div>
+        </CardContent>
+      </Card>
 
       <div className="mt-6 grid gap-4 sm:grid-cols-3">
         <RankedList title="Top countries" items={countries} />

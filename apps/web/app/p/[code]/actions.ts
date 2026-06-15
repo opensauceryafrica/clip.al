@@ -1,11 +1,15 @@
 'use server';
 
+import { verifyCode } from '@clipal/auth';
 import { keys, rateLimit, redis } from '@clipal/cache';
-import { REPORT_AUTO_REVIEW_THRESHOLD } from '@clipal/config/constants';
+import { isProd } from '@clipal/config';
+import { CODE_REGEX, REPORT_AUTO_REVIEW_THRESHOLD } from '@clipal/config/constants';
 import { db, eq, linkReports, links, sql } from '@clipal/db';
-import { headers } from 'next/headers';
-import type { ReportState } from '@/lib/action-state';
+import { cookies, headers } from 'next/headers';
+import { redirect } from 'next/navigation';
+import type { FormActionState, ReportState } from '@/lib/action-state';
 import { getSessionUser } from '@/lib/auth';
+import { issuePwCookieValue, pwCookieName } from '@/lib/pw';
 import { getClientIp } from '@/lib/request';
 
 const REASONS = ['phishing', 'malware', 'spam', 'nsfw', 'illegal', 'other'] as const;
@@ -60,4 +64,69 @@ export async function reportLinkAction(_prev: ReportState, formData: FormData): 
   }
 
   return { ok: true };
+}
+
+/**
+ * Verify a visitor's password for a protected link (§8 / spec §5). On success
+ * we mint the short-lived signed proof cookie (`clipal_pw_{code}`, 1h, httpOnly)
+ * and bounce back to the interstitial, which now reveals the destination. On
+ * failure we return an error to re-render the form.
+ *
+ * Contract:
+ *   submitPasswordAction(prev: FormActionState, formData: FormData)
+ *     formData.code     — the link code (hidden field)
+ *     formData.password — the visitor's attempt
+ *   → { error } on a bad password / rate-limit / unknown link
+ *   → redirect('/p/{code}') on success (throws, never returns)
+ *
+ * Brute-force is bounded by a sliding-window limiter keyed per code+ip
+ * (10 attempts / 15 min) BEFORE the expensive argon2 verify, so a flood can't
+ * even reach the hash.
+ */
+export async function submitPasswordAction(
+  _prev: FormActionState,
+  formData: FormData,
+): Promise<FormActionState> {
+  const code = String(formData.get('code') ?? '');
+  const password = String(formData.get('password') ?? '');
+  if (!CODE_REGEX.test(code)) return { error: 'That link no longer exists.' };
+  if (!password) return { error: 'Enter the password to continue.' };
+
+  const hdrs = await headers();
+  const ip = getClientIp(hdrs);
+
+  // Rate-limit attempts per code+ip (10 / 15 min) — checked before argon2 so a
+  // brute-force flood is rejected cheaply and can't pin a CPU core hashing.
+  const rl = await rateLimit(keys.rateLimit('pw', `${ip}:${code}`), 10, 15 * 60);
+  if (!rl.ok) {
+    return { error: 'Too many attempts. Wait a few minutes and try again.' };
+  }
+
+  const [link] = await db
+    .select({ id: links.id, passwordHash: links.passwordHash })
+    .from(links)
+    .where(eq(links.code, code))
+    .limit(1);
+  if (!link || !link.passwordHash) {
+    return { error: 'That link no longer exists.' };
+  }
+
+  const ok = await verifyCode(link.passwordHash, password);
+  if (!ok) return { error: 'Incorrect password.' };
+
+  // Mint the proof cookie. Read the clock here and feed it to the issuer.
+  const { value, maxAge } = issuePwCookieValue(code, Date.now());
+  const store = await cookies();
+  store.set(pwCookieName(code), value, {
+    httpOnly: true,
+    secure: isProd,
+    sameSite: 'lax',
+    path: '/',
+    maxAge,
+  });
+
+  // The proof lives in the cookie, not the cache, so no cache invalidation is
+  // needed here. Bounce back to the interstitial, which will now pass the
+  // password gate and reveal the destination.
+  redirect(`/p/${code}`);
 }

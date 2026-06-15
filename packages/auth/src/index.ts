@@ -1,4 +1,5 @@
 export { generateCode, hashCode, verifyCode } from './code';
+export { hashPassword, verifyPassword } from './password';
 export { signSession, verifySession, type SessionClaims } from './jwt';
 export {
   createSession,

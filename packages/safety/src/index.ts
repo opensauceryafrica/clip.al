@@ -7,6 +7,7 @@ export {
 } from './url';
 export { scanUrl, scanUrls, isGsbConfigured, type SafetyState, type ScanResult } from './gsb';
 export { registrableDomain } from './domain';
+export { containsProfanity } from './profanity';
 export {
   checkBlocklist,
   matchKeyword,

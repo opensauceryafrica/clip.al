@@ -1,8 +1,26 @@
 'use server';
 
+import { hashPassword } from '@clipal/auth';
+import {
+  isPlanRequiredError,
+  requireFeature,
+  resolvePlan,
+} from '@clipal/billing';
 import { isReservedSlug, keys, redis } from '@clipal/cache';
 import { CUSTOM_SLUG_HISTORY_MAX } from '@clipal/config/constants';
-import { and, db, eq, links, or, recordAudit, sql } from '@clipal/db';
+import type { Feature } from '@clipal/config';
+import type { DestinationMatch } from '@clipal/db';
+import {
+  and,
+  campaigns,
+  db,
+  eq,
+  linkDestinations,
+  links,
+  or,
+  recordAudit,
+  sql,
+} from '@clipal/db';
 import { checkBlocklist, scanUrl, validateDestination } from '@clipal/safety';
 import { rollPreviousCodes, validateCustomSlug } from '@clipal/shorten';
 import { revalidatePath } from 'next/cache';
@@ -187,4 +205,344 @@ export async function deleteLinkAction(formData: FormData): Promise<void> {
     await redis.set(keys.hotLink(link.code), 'DISABLED', 'EX', 300).catch(() => {});
   }
   redirect('/links');
+}
+
+// ── Power-link edit actions (§8) ─────────────────────────────────────────────
+// Each: requireUser + own-the-link (else 'Link not found.'), plan-gate the
+// relevant feature, update the power column(s), recordAudit, then invalidate the
+// hot cache for the current code AND every retired alias so the resolver re-reads
+// from Postgres. `revalidatePath` refreshes the detail page.
+
+/** Map a PlanRequiredError to a FormActionState; rethrow anything else. */
+function planError(err: unknown): FormActionState {
+  if (isPlanRequiredError(err)) return { error: err.message };
+  throw err;
+}
+
+/** Drop the hot-cache entry for the link's current code and all previous codes. */
+async function invalidateAllCodes(code: string, previousCodes: readonly string[]): Promise<void> {
+  const all = [code, ...previousCodes];
+  await Promise.all(all.map((c) => redis.del(keys.hotLink(c)).catch(() => {})));
+}
+
+/**
+ * Set or rotate a link's password (gated: `password`). Hashes with argon2id and
+ * writes `password_hash` (presence => protected). Empty input is rejected — use
+ * {@link removeLinkPasswordAction} to clear.
+ */
+export async function setLinkPasswordAction(
+  _prev: FormActionState,
+  formData: FormData,
+): Promise<FormActionState> {
+  const user = await requireUser();
+  const linkId = String(formData.get('linkId') ?? '');
+  const password = String(formData.get('password') ?? '');
+
+  const link = await ownedLink(linkId, user.id);
+  if (!link) return { error: 'Link not found.' };
+  if (!password) return { error: 'Enter a password.' };
+
+  try {
+    requireFeature(await resolvePlan(user.id), 'password');
+  } catch (err) {
+    return planError(err);
+  }
+
+  const passwordHash = await hashPassword(password);
+  await db.update(links).set({ passwordHash }).where(eq(links.id, linkId));
+
+  await recordAudit(db, {
+    actorId: user.id,
+    action: 'link.password_set',
+    targetType: 'link',
+    targetId: linkId,
+    metadata: { code: link.code },
+  });
+
+  await invalidateAllCodes(link.code, link.previousCodes);
+  revalidatePath(`/links/${linkId}`);
+  return { ok: true };
+}
+
+/** Remove a link's password (clears `password_hash`). No plan gate to remove. */
+export async function removeLinkPasswordAction(
+  _prev: FormActionState,
+  formData: FormData,
+): Promise<FormActionState> {
+  const user = await requireUser();
+  const linkId = String(formData.get('linkId') ?? '');
+
+  const link = await ownedLink(linkId, user.id);
+  if (!link) return { error: 'Link not found.' };
+
+  await db.update(links).set({ passwordHash: null }).where(eq(links.id, linkId));
+
+  await recordAudit(db, {
+    actorId: user.id,
+    action: 'link.password_removed',
+    targetType: 'link',
+    targetId: linkId,
+    metadata: { code: link.code },
+  });
+
+  await invalidateAllCodes(link.code, link.previousCodes);
+  revalidatePath(`/links/${linkId}`);
+  return { ok: true };
+}
+
+/**
+ * Set or clear a link's expiry date (gated: `expiry`). `expiresAt` empty clears;
+ * otherwise it must be a future ISO timestamp.
+ */
+export async function setLinkExpiryAction(
+  _prev: FormActionState,
+  formData: FormData,
+): Promise<FormActionState> {
+  const user = await requireUser();
+  const linkId = String(formData.get('linkId') ?? '');
+  const expiresAtRaw = String(formData.get('expiresAt') ?? '').trim();
+
+  const link = await ownedLink(linkId, user.id);
+  if (!link) return { error: 'Link not found.' };
+
+  let expiresAt: Date | null = null;
+  if (expiresAtRaw) {
+    try {
+      requireFeature(await resolvePlan(user.id), 'expiry');
+    } catch (err) {
+      return planError(err);
+    }
+    const ts = Date.parse(expiresAtRaw);
+    if (Number.isNaN(ts)) return { error: 'Expiry date is invalid.' };
+    if (ts <= Date.now()) return { error: 'Expiry must be in the future.' };
+    expiresAt = new Date(ts);
+  }
+
+  await db.update(links).set({ expiresAt }).where(eq(links.id, linkId));
+
+  await recordAudit(db, {
+    actorId: user.id,
+    action: expiresAt ? 'link.expiry_set' : 'link.expiry_cleared',
+    targetType: 'link',
+    targetId: linkId,
+    metadata: { code: link.code, ...(expiresAt ? { expiresAt: expiresAt.toISOString() } : {}) },
+  });
+
+  await invalidateAllCodes(link.code, link.previousCodes);
+  revalidatePath(`/links/${linkId}`);
+  return { ok: true };
+}
+
+/**
+ * Set or clear a link's click limit (gated: `expiry`). `maxClicks` empty clears;
+ * otherwise a positive integer. Also drops the Redis click-limit counter so the
+ * new cap (or its absence) re-seeds from the link's denormalized total.
+ */
+export async function setLinkMaxClicksAction(
+  _prev: FormActionState,
+  formData: FormData,
+): Promise<FormActionState> {
+  const user = await requireUser();
+  const linkId = String(formData.get('linkId') ?? '');
+  const maxClicksRaw = String(formData.get('maxClicks') ?? '').trim();
+
+  const link = await ownedLink(linkId, user.id);
+  if (!link) return { error: 'Link not found.' };
+
+  let maxClicks: number | null = null;
+  if (maxClicksRaw) {
+    try {
+      requireFeature(await resolvePlan(user.id), 'expiry');
+    } catch (err) {
+      return planError(err);
+    }
+    const n = Number(maxClicksRaw);
+    if (!Number.isInteger(n) || n <= 0) {
+      return { error: 'Click limit must be a positive whole number.' };
+    }
+    maxClicks = n;
+  }
+
+  await db.update(links).set({ maxClicks }).where(eq(links.id, linkId));
+
+  await recordAudit(db, {
+    actorId: user.id,
+    action: maxClicks === null ? 'link.max_clicks_cleared' : 'link.max_clicks_set',
+    targetType: 'link',
+    targetId: linkId,
+    metadata: { code: link.code, ...(maxClicks === null ? {} : { maxClicks }) },
+  });
+
+  await invalidateAllCodes(link.code, link.previousCodes);
+  // Reset the click-limit counter so the next click re-seeds against the new cap.
+  await redis.del(keys.clickLimit(link.code)).catch(() => {});
+  revalidatePath(`/links/${linkId}`);
+  return { ok: true };
+}
+
+const ROUTING_MODES = ['single', 'geo', 'device', 'ab'] as const;
+const DEVICE_CLASSES = ['mobile', 'tablet', 'desktop', 'bot'] as const;
+type EditRoutingMode = (typeof ROUTING_MODES)[number];
+
+const ROUTING_FEATURE: Record<Exclude<EditRoutingMode, 'single'>, Feature> = {
+  geo: 'geoRouting',
+  device: 'deviceRouting',
+  ab: 'abTesting',
+};
+
+/** Parse + validate `rules` JSON into rows ready for `link_destinations`. */
+function parseRoutingRules(
+  raw: string,
+  mode: Exclude<EditRoutingMode, 'single'>,
+):
+  | { ok: true; rows: { match: DestinationMatch; destinationUrl: string; order: number }[] }
+  | { ok: false; error: string } {
+  let arr: unknown;
+  try {
+    arr = JSON.parse(raw);
+  } catch {
+    return { ok: false, error: 'Routing rules are malformed.' };
+  }
+  if (!Array.isArray(arr) || arr.length === 0) {
+    return { ok: false, error: 'Add at least one routing destination.' };
+  }
+
+  const rows: { match: DestinationMatch; destinationUrl: string; order: number }[] = [];
+  let abWeightTotal = 0;
+  for (let i = 0; i < arr.length; i++) {
+    const r = arr[i] as Record<string, unknown>;
+    const url = typeof r?.url === 'string' ? r.url.trim() : '';
+    if (!url) return { ok: false, error: 'Each routing rule needs a destination URL.' };
+    const m = r?.match as Record<string, unknown> | undefined;
+    if (!m || typeof m !== 'object') return { ok: false, error: 'Each rule needs a match.' };
+
+    let match: DestinationMatch;
+    if (mode === 'geo') {
+      const countries = Array.isArray(m.countries)
+        ? m.countries.filter((c): c is string => typeof c === 'string').map((c) => c.toUpperCase())
+        : [];
+      if (countries.length === 0) return { ok: false, error: 'Geo rules need at least one country.' };
+      match = { type: 'geo', countries };
+    } else if (mode === 'device') {
+      const device = m.device;
+      if (typeof device !== 'string' || !(DEVICE_CLASSES as readonly string[]).includes(device)) {
+        return { ok: false, error: 'Device rules need a valid device class.' };
+      }
+      match = { type: 'device', device: device as (typeof DEVICE_CLASSES)[number] };
+    } else {
+      const weight = Number(m.weight);
+      if (!Number.isFinite(weight) || weight < 0) {
+        return { ok: false, error: 'A/B weights must be non-negative numbers.' };
+      }
+      abWeightTotal += weight;
+      match = { type: 'ab', weight };
+    }
+    rows.push({ match, destinationUrl: url, order: i });
+  }
+
+  if (mode === 'ab' && abWeightTotal <= 0) {
+    return { ok: false, error: 'A/B weights must sum to a positive total.' };
+  }
+  return { ok: true, rows };
+}
+
+/**
+ * Change a link's routing mode and replace its `link_destinations` rows (gated by
+ * the per-mode feature: geoRouting/deviceRouting/abTesting; switching to 'single'
+ * needs no gate). The mode change + row replacement run in one transaction so the
+ * link is never left routed with no rules.
+ */
+export async function setLinkRoutingAction(
+  _prev: FormActionState,
+  formData: FormData,
+): Promise<FormActionState> {
+  const user = await requireUser();
+  const linkId = String(formData.get('linkId') ?? '');
+  const modeRaw = String(formData.get('routingMode') ?? '').trim();
+  const rulesRaw = String(formData.get('rules') ?? '').trim();
+
+  const link = await ownedLink(linkId, user.id);
+  if (!link) return { error: 'Link not found.' };
+
+  if (!(ROUTING_MODES as readonly string[]).includes(modeRaw)) {
+    return { error: 'Unknown routing mode.' };
+  }
+  const mode = modeRaw as EditRoutingMode;
+
+  let rows: { match: DestinationMatch; destinationUrl: string; order: number }[] = [];
+  if (mode !== 'single') {
+    try {
+      requireFeature(await resolvePlan(user.id), ROUTING_FEATURE[mode]);
+    } catch (err) {
+      return planError(err);
+    }
+    const parsed = parseRoutingRules(rulesRaw, mode);
+    if (!parsed.ok) return { error: parsed.error };
+    rows = parsed.rows;
+  }
+
+  await db.transaction(async (tx) => {
+    await tx.update(links).set({ routingMode: mode }).where(eq(links.id, linkId));
+    await tx.delete(linkDestinations).where(eq(linkDestinations.linkId, linkId));
+    if (rows.length > 0) {
+      await tx
+        .insert(linkDestinations)
+        .values(rows.map((r) => ({ linkId, match: r.match, destinationUrl: r.destinationUrl, order: r.order })));
+    }
+  });
+
+  await recordAudit(db, {
+    actorId: user.id,
+    action: 'link.routing_set',
+    targetType: 'link',
+    targetId: linkId,
+    metadata: { code: link.code, routingMode: mode, rules: rows.length },
+  });
+
+  await invalidateAllCodes(link.code, link.previousCodes);
+  revalidatePath(`/links/${linkId}`);
+  return { ok: true };
+}
+
+/**
+ * Assign or clear a link's campaign. `campaignId` empty clears the association;
+ * otherwise it must reference a campaign the user owns (else 'Campaign not found.').
+ * No feature gate (A/B gating is enforced when routing is set).
+ */
+export async function assignLinkCampaignAction(
+  _prev: FormActionState,
+  formData: FormData,
+): Promise<FormActionState> {
+  const user = await requireUser();
+  const linkId = String(formData.get('linkId') ?? '');
+  const campaignId = String(formData.get('campaignId') ?? '').trim();
+
+  const link = await ownedLink(linkId, user.id);
+  if (!link) return { error: 'Link not found.' };
+
+  if (campaignId) {
+    const [camp] = await db
+      .select({ id: campaigns.id })
+      .from(campaigns)
+      .where(and(eq(campaigns.id, campaignId), eq(campaigns.userId, user.id)))
+      .limit(1);
+    if (!camp) return { error: 'Campaign not found.' };
+  }
+
+  await db
+    .update(links)
+    .set({ campaignId: campaignId || null })
+    .where(eq(links.id, linkId));
+
+  await recordAudit(db, {
+    actorId: user.id,
+    action: campaignId ? 'link.campaign_assigned' : 'link.campaign_cleared',
+    targetType: 'link',
+    targetId: linkId,
+    metadata: { code: link.code, ...(campaignId ? { campaignId } : {}) },
+  });
+
+  await invalidateAllCodes(link.code, link.previousCodes);
+  revalidatePath(`/links/${linkId}`);
+  return { ok: true };
 }

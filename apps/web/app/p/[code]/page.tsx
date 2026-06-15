@@ -2,13 +2,18 @@ import { CODE_REGEX } from '@clipal/config/constants';
 import { Badge, Card, CardContent } from '@clipal/ui';
 import { ShieldCheck, ShieldQuestion } from 'lucide-react';
 import type { Metadata } from 'next';
+import { headers } from 'next/headers';
 import Link from 'next/link';
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import { InterstitialCountdown } from '@/components/interstitial-countdown';
 import { ReportDialog } from '@/components/report-dialog';
-import { resolveLink } from '@/lib/links';
+import { pwCookieName, verifyPwCookie } from '@/lib/pw';
+import { parseCookies } from '@/lib/request';
+import { isExpired, resolveCachedLink } from '@/lib/resolve';
+import { PasswordForm } from './password-form';
 
 export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
 export const metadata: Metadata = { title: 'Redirecting…', robots: { index: false } };
 
 function truncateMiddle(value: string, max = 72): string {
@@ -25,17 +30,29 @@ export default async function InterstitialPage({
   const { code } = await params;
   if (!CODE_REGEX.test(code)) notFound();
 
-  const link = await resolveLink(code);
-  if (
-    !link ||
-    link.status !== 'active' ||
-    link.safetyState === 'malicious' ||
-    link.safetyState === 'suspicious'
-  ) {
-    notFound();
+  const result = await resolveCachedLink(code);
+  if (result.kind !== 'ok') notFound();
+  const link = result.link;
+
+  const now = Date.now();
+
+  // 1. Expiry — same terminal page the hot path (`/r`) uses.
+  if (isExpired(link, now)) redirect(`/p/${code}/expired`);
+
+  // 2. Password gate. With no valid proof cookie we render the form and NEVER
+  //    reveal the destination (resolveDestination is not even consulted here).
+  if (link.hasPassword) {
+    const hdrs = await headers();
+    const cookies = parseCookies(hdrs);
+    if (!verifyPwCookie(code, cookies.get(pwCookieName(code)), now)) {
+      return <PasswordForm code={code} />;
+    }
   }
 
-  const safe = link.safetyState === 'clean';
+  // 3. Cleared all gates — render the standard interstitial. The actual
+  //    click-limit + routing is enforced on Continue (`/p/[code]/go`); here we
+  //    only show the fallback destination, exactly as before.
+  const safe = link.safety === 'clean';
   let host = link.url;
   try {
     host = new URL(link.url).host;
