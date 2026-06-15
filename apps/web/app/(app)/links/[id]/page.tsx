@@ -48,6 +48,7 @@ import {
 import type { InitialRule, RulesMode } from '@/components/link-builder-rules-editor';
 import { LinkStatusBadge, SafetyBadge } from '@/components/link-status-badge';
 import { PageHeader } from '@/components/page-header';
+import { QrCard } from '@/components/qr-card';
 import { RankedList } from '@/components/ranked-list';
 import { requireUser } from '@/lib/auth';
 import { formatDate, formatDateTime, formatNumber } from '@/lib/format';
@@ -185,6 +186,12 @@ export default async function LinkDetailPage({ params }: { params: Promise<{ id:
           </CardContent>
         </Card>
       </div>
+
+      {can(plan, 'qr') ? (
+        <div className="mt-6">
+          <QrCard shortUrl={shortUrl} />
+        </div>
+      ) : null}
 
       <Card className="mt-6">
         <CardHeader>

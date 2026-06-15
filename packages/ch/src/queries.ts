@@ -73,6 +73,32 @@ export function linkRecentClicks(codes: string[], limit = 100): Promise<RecentCl
   );
 }
 
+// ---- Per-campaign (campaign detail) ----------------------------------------
+
+/**
+ * Human (is_bot=0) click totals grouped by `link_code` over `days`, for the set
+ * of codes belonging to a campaign's links. The campaign detail page maps each
+ * returned `{ name: code, clicks }` back to its link (a link may contribute
+ * several codes via renames — sum them caller-side). This is the per-LINK figure;
+ * TRUE per-VARIANT attribution is Phase 3 (the click event does not yet carry the
+ * served A/B variant), so do NOT split this by destination.
+ */
+export function campaignClicksByCode(
+  codes: string[],
+  days = 30,
+): Promise<NamedCount[]> {
+  if (codes.length === 0) return Promise.resolve([]);
+  return rows<NamedCount>(
+    `SELECT link_code AS name, count() AS clicks
+     FROM clicks
+     WHERE link_code IN {codes:Array(String)}
+       AND ts >= now() - INTERVAL {days:UInt32} DAY
+       AND is_bot = 0
+     GROUP BY name`,
+    { codes, days },
+  );
+}
+
 // ---- Per-owner (dashboard headline) ----------------------------------------
 
 export async function ownerClicksToday(ownerId: string): Promise<number> {

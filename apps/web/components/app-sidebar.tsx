@@ -1,7 +1,15 @@
 'use client';
 
 import { cn } from '@clipal/ui';
-import { LayoutDashboard, Link2, Settings, Shield, type LucideIcon } from 'lucide-react';
+import {
+  LayoutDashboard,
+  Link2,
+  Megaphone,
+  Settings,
+  Shield,
+  Upload,
+  type LucideIcon,
+} from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
@@ -14,6 +22,8 @@ interface NavItem {
 const BASE_ITEMS: NavItem[] = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/links', label: 'Links', icon: Link2 },
+  { href: '/campaigns', label: 'Campaigns', icon: Megaphone },
+  { href: '/links/bulk', label: 'Bulk import', icon: Upload },
   { href: '/settings', label: 'Settings', icon: Settings },
 ];
 

@@ -3,6 +3,7 @@ import { startHealthServer } from './health';
 import { initGeo } from './lib/geo';
 import { getDailySalt } from './lib/salt';
 import { runClickIngest } from './loops/click-ingest';
+import { runBulkImport } from './loops/bulk-import';
 import { env } from '@clipal/config';
 import { refreshGeo } from './loops/geo-refresh';
 import { purgeDeletedAccounts } from './loops/purge';
@@ -47,8 +48,9 @@ async function main(): Promise<void> {
     );
   }
 
-  // Long-running click ingest (§18.1).
+  // Long-running stream consumers (§18.1).
   const ingest = runClickIngest(controller.signal);
+  const bulkImport = runBulkImport(controller.signal);
 
   const shutdown = (signal: string): void => {
     console.log(`[worker] ${signal} — shutting down`);
@@ -61,7 +63,7 @@ async function main(): Promise<void> {
   process.on('SIGTERM', () => shutdown('SIGTERM'));
   process.on('SIGINT', () => shutdown('SIGINT'));
 
-  await ingest;
+  await Promise.all([ingest, bulkImport]);
 }
 
 main().catch((err: unknown) => {

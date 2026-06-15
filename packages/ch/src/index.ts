@@ -7,6 +7,7 @@ export {
   linkTopReferrers,
   linkDevices,
   linkRecentClicks,
+  campaignClicksByCode,
   ownerClicksToday,
   ownerTopLinks,
   clicksToday,

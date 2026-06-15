@@ -19,7 +19,8 @@
     "maxmind": "catalog:",
     "tar": "catalog:",
     "tsx": "catalog:",
-    "ua-parser-js": "catalog:"
+    "ua-parser-js": "catalog:",
+    "@clipal/shorten": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "catalog:",

@@ -36,6 +36,17 @@ export const keys = {
   blocklistDomains: 'blocklist:domains',
   blocklistKeywords: 'blocklist:keywords',
 
+  /** Bulk CSV import stream (XADD one entry per valid row, §8/AC7). */
+  bulkStream: 'bulk:imports',
+  /** Dead-letter stream for import rows that fail to create 3×. */
+  bulkDlq: 'bulk:imports:dlq',
+  /**
+   * Per-import progress hash (HSET/HINCRBY): fields total, done, ok, failed,
+   * status ('running'|'done'). Polled by the SSE progress route, written by the
+   * worker bulk-import loop. TTL'd so finished imports self-expire.
+   */
+  bulkProgress: (importId: string) => `bulk:progress:${importId}`,
+
   /** Sliding-window rate-limit bucket. */
   rateLimit: (bucket: string, id: string) => `rl:${bucket}:${id}`,
   /** Verify-attempt lock counter per email (§8 hardening). */
