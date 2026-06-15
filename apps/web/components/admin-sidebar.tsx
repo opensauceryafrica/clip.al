@@ -3,10 +3,13 @@
 import { cn } from '@clipal/ui';
 import {
   Ban,
+  CreditCard,
   Flag,
   LayoutDashboard,
   Link2,
+  Receipt,
   ScrollText,
+  Tag,
   Users,
   type LucideIcon,
 } from 'lucide-react';
@@ -24,6 +27,9 @@ const ITEMS: NavItem[] = [
   { href: '/admin/links', label: 'Links', icon: Link2 },
   { href: '/admin/users', label: 'Users', icon: Users },
   { href: '/admin/reports', label: 'Reports', icon: Flag },
+  { href: '/admin/subscriptions', label: 'Subscriptions', icon: CreditCard },
+  { href: '/admin/invoices', label: 'Invoices', icon: Receipt },
+  { href: '/admin/pricing', label: 'Pricing', icon: Tag },
   { href: '/admin/blocklist', label: 'Blocklist', icon: Ban },
   { href: '/admin/audit', label: 'Audit log', icon: ScrollText },
 ];

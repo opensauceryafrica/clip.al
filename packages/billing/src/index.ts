@@ -15,3 +15,19 @@ export {
   type Processor,
 } from './context';
 export { incrementLinkUsage, getLinkUsage, usagePeriod } from './usage';
+export {
+  applyBillingEvent,
+  startCheckout,
+  verifyAndActivate,
+  degradeUserToFree,
+  restoreUserPlan,
+  normalizePaystackEvent,
+  normalizePolarEvent,
+  paystackEventId,
+  parseWebhookEvent,
+  type NormalizedEvent,
+  type NormalizedEventType,
+  type NormalizedEventData,
+  type ApplyResult,
+  type StartCheckoutResult,
+} from './subscription';

@@ -1,5 +1,5 @@
 {
-  "name": "@clipal/billing",
+  "name": "@clipal/polar",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -13,12 +13,7 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@clipal/cache": "workspace:*",
-    "@clipal/config": "workspace:*",
-    "@clipal/db": "workspace:*",
-    "@clipal/geo": "workspace:*",
-    "@clipal/paystack": "workspace:*",
-    "@clipal/polar": "workspace:*"
+    "@clipal/config": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "catalog:",

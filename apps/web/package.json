@@ -20,6 +20,8 @@
     "@clipal/email": "workspace:*",
     "@clipal/geo": "workspace:*",
     "@clipal/observability": "workspace:*",
+    "@clipal/paystack": "workspace:*",
+    "@clipal/polar": "workspace:*",
     "@clipal/s3": "workspace:*",
     "@clipal/safety": "workspace:*",
     "@clipal/shorten": "workspace:*",

@@ -4,4 +4,5 @@ export {
   sendWelcomeMigrated,
   sendAccountSuspended,
   sendLinkDisabled,
+  sendSubscriptionReceipt,
 } from './send';

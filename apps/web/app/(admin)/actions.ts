@@ -1,9 +1,29 @@
 'use server';
 
 import { invalidateUserCache, revokeAllSessions } from '@clipal/auth';
+import { applyBillingEvent } from '@clipal/billing';
 import { addBlockEntry, keys, redis, removeBlockEntry } from '@clipal/cache';
-import { getPublicBaseUrl } from '@clipal/config';
-import { blockedDomains, db, eq, linkReports, links, recordAudit, users } from '@clipal/db';
+import {
+  currencies,
+  getPublicBaseUrl,
+  intervals,
+  planNames,
+  type Currency,
+  type Interval,
+  type PlanName,
+} from '@clipal/config';
+import {
+  and,
+  blockedDomains,
+  db,
+  eq,
+  linkReports,
+  links,
+  planPrices,
+  recordAudit,
+  subscriptions,
+  users,
+} from '@clipal/db';
 import { sendAccountSuspended } from '@clipal/email';
 import { registrableDomain } from '@clipal/safety';
 import { headers } from 'next/headers';
@@ -253,4 +273,132 @@ export async function adminRemoveBlockEntryAction(formData: FormData): Promise<v
     ...(await auditContext()),
   });
   revalidatePath('/admin/blocklist');
+}
+
+// ---- Subscriptions ----------------------------------------------------------
+
+/**
+ * Admin manual cancel of a user's subscription. Immediate (revokes the paid
+ * entitlement now): we apply a `cancel` event with `cancelAtPeriodEnd: false`,
+ * which the billing state machine resolves to a hard downgrade to free —
+ * crucially WITHOUT destroying the user's preserved power-link configuration
+ * (the routing modes are suspended, the destination rows stay). We do not call
+ * the provider here (admin override is local-first); the provider webhook
+ * reconciles idempotently if the user is also cancelled upstream.
+ */
+export async function adminCancelSubscriptionAction(formData: FormData): Promise<void> {
+  const admin = await requireAdmin();
+  const userId = String(formData.get('userId') ?? '');
+  if (!userId) return;
+
+  const [sub] = await db
+    .select()
+    .from(subscriptions)
+    .where(eq(subscriptions.userId, userId))
+    .limit(1);
+  if (!sub || sub.plan === 'free') return;
+
+  await applyBillingEvent({
+    processor: sub.processor ?? 'paystack',
+    type: 'cancel',
+    data: {
+      userId,
+      plan: sub.plan,
+      ...(sub.interval ? { interval: sub.interval as Interval } : {}),
+      currency: sub.currency as Currency,
+      cancelAtPeriodEnd: false,
+    },
+  });
+
+  await recordAudit(db, {
+    actorId: admin.id,
+    action: 'subscription.admin_cancel',
+    targetType: 'subscription',
+    targetId: userId,
+    metadata: { plan: sub.plan, processor: sub.processor },
+    ...(await auditContext()),
+  });
+  revalidatePath('/admin/subscriptions');
+}
+
+// ---- Pricing (plan_prices overrides) ----------------------------------------
+
+function isPlanName(v: string): v is PlanName {
+  return (planNames as readonly string[]).includes(v);
+}
+function isCurrency(v: string): v is Currency {
+  return (currencies as readonly string[]).includes(v);
+}
+function isInterval(v: string): v is Interval {
+  return (intervals as readonly string[]).includes(v);
+}
+
+/**
+ * Upsert a `plan_prices` override row for a (plan, currency, interval) triple.
+ * An active override supersedes the code-default price in `@clipal/config`'s
+ * `DEFAULT_PRICES`; `effectivePrice()` reads it fresh from Postgres on every call
+ * (there is no separate Redis price cache to bust — plan resolution caches the
+ * *plan*, not the price, so a price edit is visible immediately). An empty
+ * amount removes the override, falling the price back to the code default.
+ *
+ * `amountMinor` is in minor units (kobo for NGN, cents for USD).
+ */
+export async function adminUpsertPlanPriceAction(formData: FormData): Promise<void> {
+  const admin = await requireAdmin();
+  // Price changes are a financial control — admin-only (moderators excluded).
+  if (admin.role !== 'admin') return;
+
+  const plan = String(formData.get('plan') ?? '');
+  const currency = String(formData.get('currency') ?? '');
+  const interval = String(formData.get('interval') ?? '');
+  if (!isPlanName(plan) || plan === 'free') return;
+  if (!isCurrency(currency) || !isInterval(interval)) return;
+
+  const amountRaw = String(formData.get('amountMinor') ?? '').trim();
+
+  // Empty value ⇒ delete the override (revert to code default).
+  if (amountRaw === '') {
+    await db
+      .delete(planPrices)
+      .where(
+        and(
+          eq(planPrices.plan, plan),
+          eq(planPrices.currency, currency),
+          eq(planPrices.interval, interval),
+        ),
+      );
+    await recordAudit(db, {
+      actorId: admin.id,
+      action: 'pricing.clear_override',
+      targetType: 'plan_price',
+      targetId: `${plan}:${currency}:${interval}`,
+      metadata: { plan, currency, interval },
+      ...(await auditContext()),
+    });
+    revalidatePath('/admin/pricing');
+    revalidatePath('/pricing');
+    return;
+  }
+
+  const amountMinor = Number.parseInt(amountRaw, 10);
+  if (!Number.isFinite(amountMinor) || amountMinor < 0) return;
+
+  await db
+    .insert(planPrices)
+    .values({ plan, currency, interval, amountMinor, active: true })
+    .onConflictDoUpdate({
+      target: [planPrices.plan, planPrices.currency, planPrices.interval],
+      set: { amountMinor, active: true },
+    });
+
+  await recordAudit(db, {
+    actorId: admin.id,
+    action: 'pricing.set_override',
+    targetType: 'plan_price',
+    targetId: `${plan}:${currency}:${interval}`,
+    metadata: { plan, currency, interval, amountMinor },
+    ...(await auditContext()),
+  });
+  revalidatePath('/admin/pricing');
+  revalidatePath('/pricing');
 }

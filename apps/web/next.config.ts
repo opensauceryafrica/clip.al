@@ -54,6 +54,8 @@ const config: NextConfig = {
     '@clipal/geo',
     '@clipal/s3',
     '@clipal/billing',
+    '@clipal/paystack',
+    '@clipal/polar',
   ],
   // Clean public short links are `clip.al/CODE`. This `afterFiles` rewrite maps
   // a bare single-segment path to the redirect handler — and because afterFiles

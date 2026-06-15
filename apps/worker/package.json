@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@clipal/billing": "workspace:*",
     "@clipal/cache": "workspace:*",
     "@clipal/ch": "workspace:*",
     "@clipal/config": "workspace:*",
@@ -16,11 +17,11 @@
     "@clipal/email": "workspace:*",
     "@clipal/observability": "workspace:*",
     "@clipal/safety": "workspace:*",
+    "@clipal/shorten": "workspace:*",
     "maxmind": "catalog:",
     "tar": "catalog:",
     "tsx": "catalog:",
-    "ua-parser-js": "catalog:",
-    "@clipal/shorten": "workspace:*"
+    "ua-parser-js": "catalog:"
   },
   "devDependencies": {
     "@types/node": "catalog:",

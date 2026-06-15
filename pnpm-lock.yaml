@@ -209,6 +209,12 @@ importers:
       '@clipal/observability':
         specifier: workspace:*
         version: link:../../packages/observability
+      '@clipal/paystack':
+        specifier: workspace:*
+        version: link:../../packages/paystack
+      '@clipal/polar':
+        specifier: workspace:*
+        version: link:../../packages/polar
       '@clipal/s3':
         specifier: workspace:*
         version: link:../../packages/s3
@@ -288,6 +294,9 @@ importers:
 
   apps/worker:
     dependencies:
+      '@clipal/billing':
+        specifier: workspace:*
+        version: link:../../packages/billing
       '@clipal/cache':
         specifier: workspace:*
         version: link:../../packages/cache
@@ -377,6 +386,12 @@ importers:
       '@clipal/geo':
         specifier: workspace:*
         version: link:../geo
+      '@clipal/paystack':
+        specifier: workspace:*
+        version: link:../paystack
+      '@clipal/polar':
+        specifier: workspace:*
+        version: link:../polar
     devDependencies:
       '@types/node':
         specifier: 'catalog:'
@@ -519,6 +534,38 @@ importers:
       '@sentry/node':
         specifier: 'catalog:'
         version: 8.55.2
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 22.19.19
+      typescript:
+        specifier: 'catalog:'
+        version: 5.9.3
+      vitest:
+        specifier: 'catalog:'
+        version: 2.1.9(@types/node@22.19.19)(lightningcss@1.32.0)
+
+  packages/paystack:
+    dependencies:
+      '@clipal/config':
+        specifier: workspace:*
+        version: link:../config
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 22.19.19
+      typescript:
+        specifier: 'catalog:'
+        version: 5.9.3
+      vitest:
+        specifier: 'catalog:'
+        version: 2.1.9(@types/node@22.19.19)(lightningcss@1.32.0)
+
+  packages/polar:
+    dependencies:
+      '@clipal/config':
+        specifier: workspace:*
+        version: link:../config
     devDependencies:
       '@types/node':
         specifier: 'catalog:'

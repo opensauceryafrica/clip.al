@@ -4,6 +4,7 @@ import { initGeo } from './lib/geo';
 import { getDailySalt } from './lib/salt';
 import { runClickIngest } from './loops/click-ingest';
 import { runBulkImport } from './loops/bulk-import';
+import { runBillingProcessor } from './loops/billing-processor';
 import { env } from '@clipal/config';
 import { refreshGeo } from './loops/geo-refresh';
 import { purgeDeletedAccounts } from './loops/purge';
@@ -34,6 +35,7 @@ async function main(): Promise<void> {
     await getDailySalt(); // §18.4 keep the current UTC-day IP salt warm
   });
   every('reap-auth-codes', 5 * MINUTE, reapAuthCodes); // §18.5
+  every('billing-processor', 15_000, runBillingProcessor); // §7 webhook drain safety net
   every('reap-sessions', 24 * 60 * MINUTE, reapSessions); // §18.6
   every('account-purge', 24 * 60 * MINUTE, purgeDeletedAccounts); // §18.x daily hard-delete
 

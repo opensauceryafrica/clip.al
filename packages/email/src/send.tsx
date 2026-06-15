@@ -3,6 +3,7 @@ import { render } from '@react-email/render';
 import { isEmailConfigured, sendEmail } from './client';
 import { AccountSuspended } from './templates/AccountSuspended';
 import { LinkDisabled } from './templates/LinkDisabled';
+import { SubscriptionReceipt } from './templates/SubscriptionReceipt';
 import { VerificationCode } from './templates/VerificationCode';
 import { WelcomeMigrated } from './templates/WelcomeMigrated';
 
@@ -43,4 +44,46 @@ export async function sendLinkDisabled(
     <LinkDisabled code={opts.code} destination={opts.destination} threats={opts.threats} />,
   );
   await sendEmail({ to, subject: 'A clip.al link was disabled for safety', html });
+}
+
+/**
+ * Format a minor-unit amount (kobo/cents) to a major-unit string with two
+ * decimals, e.g. 250000 → "2,500.00". Pure string math (no Intl currency) to
+ * stay deterministic across environments.
+ */
+function formatMinor(amountMinor: number): string {
+  const whole = Math.trunc(amountMinor / 100);
+  const frac = Math.abs(amountMinor % 100)
+    .toString()
+    .padStart(2, '0');
+  const grouped = whole.toLocaleString('en-US');
+  return `${grouped}.${frac}`;
+}
+
+/**
+ * Transactional subscription receipt. `amountMinor` is in the currency subunit
+ * (kobo for NGN, cents for USD); `periodEnd` is the date access is paid through
+ * (may be null for one-off charges with no period info).
+ */
+export async function sendSubscriptionReceipt(
+  to: string,
+  opts: { plan: string; amountMinor: number; currency: string; periodEnd: Date | null },
+): Promise<void> {
+  const amountMajor = formatMinor(opts.amountMinor);
+  const periodEndLabel = opts.periodEnd
+    ? opts.periodEnd.toISOString().slice(0, 10)
+    : '—';
+  const html = await render(
+    <SubscriptionReceipt
+      plan={opts.plan}
+      amountMajor={amountMajor}
+      currency={opts.currency}
+      periodEndLabel={periodEndLabel}
+    />,
+  );
+  await sendEmail({
+    to,
+    subject: `Your clip.al ${opts.plan} receipt — ${opts.currency} ${amountMajor}`,
+    html,
+  });
 }

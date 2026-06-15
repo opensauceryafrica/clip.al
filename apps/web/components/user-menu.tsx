@@ -9,7 +9,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@clipal/ui';
-import { ChevronDown, LogOut, Settings, Shield } from 'lucide-react';
+import { ChevronDown, CreditCard, LogOut, Settings, Shield } from 'lucide-react';
 import Link from 'next/link';
 import { useRef } from 'react';
 
@@ -33,6 +33,11 @@ export function UserMenu({ user }: { user: SessionUser }) {
         <DropdownMenuItem asChild>
           <Link href="/settings">
             <Settings className="size-4" /> Settings
+          </Link>
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <Link href="/billing">
+            <CreditCard className="size-4" /> Billing
           </Link>
         </DropdownMenuItem>
         {isAdmin ? (
