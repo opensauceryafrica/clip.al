@@ -147,6 +147,83 @@ enters their email at `/signin` is recognized and signed in seamlessly (§11).
 
 ---
 
+## Phase 2 operations (power features & monetization)
+
+Phase 2 adds power links (custom slugs, password, expiry, click-limits, geo/device
+routing, A/B), QR codes, bulk CSV import, a public REST API + webhooks, custom
+domains, dual billing, and ads. Each external integration **self-gates on its key
+being present** — leave a key blank and that feature is simply off.
+
+### Billing — Paystack (NGN) + Polar.sh (USD)
+
+clip.al bills Nigerian visitors in **NGN via Paystack** and everyone else in **USD
+via Polar.sh** (a merchant of record that handles global tax). Currency/processor is
+chosen by visitor country at checkout.
+
+1. **Paystack**: create an account, copy the **test** then **live** secret/public
+   keys into `PAYSTACK_SECRET_KEY` / `PAYSTACK_PUBLIC_KEY`. In the Paystack dashboard
+   create a **Plan** for each paid tier × interval (Pro monthly, Pro yearly, Business
+   monthly, Business yearly) in **NGN**; the plan codes are referenced at checkout.
+   Set the webhook URL to `https://clip.al/api/paystack/webhook` and copy the signing
+   secret into `PAYSTACK_WEBHOOK_SECRET`.
+2. **Polar.sh**: create an organization, generate an access token →
+   `POLAR_ACCESS_TOKEN` and `POLAR_ORG_ID`. Create a **product/price** per paid tier ×
+   interval in **USD**. Add the webhook endpoint `https://clip.al/api/polar/webhook`
+   and copy its secret into `POLAR_WEBHOOK_SECRET`.
+3. **Prices** are admin-editable at `/admin/pricing` (overrides the code defaults in
+   `packages/config/src/plans.ts`); `/pricing` and checkout read the effective price.
+4. Webhooks are verified (Paystack HMAC-SHA512, Polar Standard-Webhooks HMAC-SHA256),
+   recorded in `billing_events` for idempotency, and applied to `subscriptions` /
+   `invoices` by the handler + the worker `billing-processor` safety net.
+   Cancellation is cancel-at-period-end; at period end a downgrade **preserves**
+   power-link config (routing falls back to the default destination; passwords stay)
+   — no data destruction.
+
+### Wiring AdSense + sponsored slots
+
+- Ads are **off by default**. Set `ADS_ENABLED=true` and `ADSENSE_CLIENT_ID=ca-pub-…`
+  to enable the AdSense fallback on the interstitial (`/p/:code`). Manual units only —
+  Auto Ads are not used, and ads never appear on app/dashboard/admin pages.
+- **Sponsored** campaigns take priority over AdSense: manage them at `/admin/ads`
+  (upload a creative to MinIO, set slot/weight/window). The interstitial shows a
+  sponsored ad when one is active, else the AdSense unit.
+- **Account safety**: ads are suppressed for bots, datacenter/cloud IPs
+  (`packages/safety/asn-denylist.ts` — expand for your needs), automated requests,
+  and visitors who haven't consented. Free-tier owners' links show ads; Pro/Business
+  owners' links skip the interstitial entirely. A first-visit **cookie-consent**
+  banner defers ad loading; EU/UK/CA require explicit opt-in.
+
+### Adding a custom domain
+
+A user adds `go.brand.com` at `/domains`, then sets two DNS records (shown in-app):
+`CNAME go.brand.com → <DOMAINS_CNAME_TARGET>` (default `domains.clip.al`) and
+`TXT _clipal-verify.go.brand.com → <token>`. The worker `domain-verifier` polls the
+TXT every 60s (→ `pending_tls`), and **Caddy on-demand TLS** issues a Let's Encrypt
+cert on the first HTTPS hit, gated by `GET /internal/caddy/check` (IP-restricted to
+the Caddy container). Operator setup:
+
+- Point `domains.clip.al` (an A record at the server) and keep it **DNS-only** on
+  Cloudflare (grey cloud) so the ACME challenge reaches the origin; the alternative
+  for proxied domains is Cloudflare Full(strict) + an origin cert.
+- `infra/Caddyfile` already declares the `on_demand_tls { ask … }` global option and
+  a catch-all `:443` site; set `CADDY_CHECK_ALLOWED_IP` to the Caddy container IP.
+
+### REST API + webhooks
+
+Users create scoped API keys at `/api-keys` (`clpl_live_…`, shown once) and call
+`/api/v1/*` with `Authorization: Bearer …` (per-key + per-plan rate limits; cursor
+pagination; `Idempotency-Key` on POST). OpenAPI is at `/api/v1/openapi.json` and the
+docs at `/docs/api`. Outbound webhooks (`/webhooks`) are HMAC-signed
+(`X-clipal-Signature`) and delivered by the worker with exponential-backoff retries.
+
+### Plan limits / seats
+
+Plan capabilities + limits live in `packages/config/src/plans.ts` (one source of
+truth for UI, API, and enforcement). Team seats are scaffolded only in Phase 2 (full
+collaboration is Phase 3).
+
+---
+
 ## Backups & restore
 
 Daily backups are recommended (cron on the host, or a sidecar container).
